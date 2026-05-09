@@ -15,14 +15,34 @@
 </script>
 
 <div class="space-y-4">
-  <div class="flex items-baseline justify-between">
+  <div class="flex items-baseline justify-between gap-4 flex-wrap">
     <div>
       <h1 class="text-2xl font-semibold">{data.area.area_name}</h1>
       <p class="text-sm text-ink-600">
         Equalization list &middot; {data.area.mode} mode &middot; cycle {data.cycle}
       </p>
     </div>
-    <a href="/tm" class="text-sm text-accent-700 hover:underline">&larr; back to dashboard</a>
+    <div class="flex items-center gap-3">
+      {#if data.canChooseArea}
+        <form method="GET" class="flex items-center gap-2">
+          <label for="area" class="text-xs text-ink-600">Area:</label>
+          <select
+            id="area"
+            name="area"
+            class="input text-sm py-1"
+            onchange={(e) => {
+              const v = (e.currentTarget as HTMLSelectElement).value;
+              window.location.href = `/tm/area?area=${v}`;
+            }}
+          >
+            {#each data.visibleAreas as a}
+              <option value={a.id} selected={a.id === data.area.area_id}>{a.name}</option>
+            {/each}
+          </select>
+        </form>
+      {/if}
+      <a href="/" class="text-sm text-accent-700 hover:underline">&larr; back</a>
+    </div>
   </div>
 
   <div class="card">

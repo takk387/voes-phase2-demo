@@ -101,7 +101,7 @@
         </div>
 
         <div class="flex gap-3">
-          <a href="/tm/area" class="text-sm text-accent-700 hover:underline">Area equalization list</a>
+          <a href="/tm/area?area={area.id}" class="text-sm text-accent-700 hover:underline">Area equalization list</a>
           <a href="/audit?area={area.id}" class="text-sm text-accent-700 hover:underline">Audit log</a>
         </div>
       </div>
