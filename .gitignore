@@ -1,0 +1,15 @@
+node_modules/
+.svelte-kit/
+build/
+.env
+.env.*
+!.env.example
+.vercel/
+*.log
+.DS_Store
+
+# Demo database (regenerated from seed)
+/data/*.db
+/data/*.db-journal
+/data/*.db-wal
+/data/*.db-shm
