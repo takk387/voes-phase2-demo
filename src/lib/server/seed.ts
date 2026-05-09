@@ -141,33 +141,43 @@ const AREAS: AreaSeed[] = [
 // ============================================================================
 // Wipe + seed
 // ============================================================================
+// Wipe must run OUTSIDE a transaction. SQLite's `PRAGMA foreign_keys` cannot
+// be changed inside a transaction, and we need it off here — otherwise any
+// child→parent reference (e.g. bypass_remedy → offer, mandatory_escalation_event
+// → posting) blocks the cascade. We re-enable FKs immediately and seed inside
+// a transaction with FKs back on, so the seeded state is fully consistent.
 function wipe() {
   const conn = db();
-  const tables = [
-    'cycle_offered',
-    'first_cycle_offered',
-    'rotation_state',
-    'charge',
-    'response',
-    'offer',
-    'posting_qualification',
-    'posting',
-    'employee_qualification',
-    'qualification',
-    'leave_period',
-    'area_membership',
-    'employee',
-    'area_mode_setting',
-    'area',
-    'audit_log',
-    'mode_cutover_event',
-    'annual_zero_out_event',
-    'bypass_remedy',
-    'mandatory_escalation_event',
-    'pending_approval'
-  ];
-  for (const t of tables) conn.exec(`DELETE FROM ${t}`);
-  conn.exec(`DELETE FROM sqlite_sequence`);
+  conn.pragma('foreign_keys = OFF');
+  try {
+    const tables = [
+      'cycle_offered',
+      'first_cycle_offered',
+      'rotation_state',
+      'charge',
+      'response',
+      'offer',
+      'posting_qualification',
+      'posting',
+      'employee_qualification',
+      'qualification',
+      'leave_period',
+      'area_membership',
+      'employee',
+      'area_mode_setting',
+      'area',
+      'audit_log',
+      'mode_cutover_event',
+      'annual_zero_out_event',
+      'bypass_remedy',
+      'mandatory_escalation_event',
+      'pending_approval'
+    ];
+    for (const t of tables) conn.exec(`DELETE FROM ${t}`);
+    conn.exec(`DELETE FROM sqlite_sequence`);
+  } finally {
+    conn.pragma('foreign_keys = ON');
+  }
 }
 
 function seedQualifications() {
@@ -460,8 +470,10 @@ export function ensureSeeded(): { seeded: boolean; counts?: Record<string, numbe
 // `tsx src/lib/server/seed.ts` script entry point at the bottom of this file
 // calls runSeed() and prints counts.
 export function runSeed(): Record<string, number> {
+  // Wipe runs outside the transaction so FK pragma can flip off/on.
+  wipe();
+  // Seeding runs in a single transaction for atomicity, with FKs back on.
   withTransaction(() => {
-    wipe();
     seedQualifications();
     for (const area of AREAS) seedArea(area);
     seedBA2History();

@@ -2,9 +2,7 @@ import Database from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-// Inline the schema SQL at build time. Vite's `?raw` suffix bundles the file
-// content as a string, which works for both dev and adapter-node builds.
-import schemaSql from './schema.sql?raw';
+import { schemaSql } from './schema.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
