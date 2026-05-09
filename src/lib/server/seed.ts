@@ -445,6 +445,17 @@ function seedPaintHistory() {
   }
 }
 
+// Auto-seed on first boot when the DB is empty. Used by hooks.server.ts so
+// a fresh Railway deploy with an empty volume comes up populated, with no
+// extra "first-time setup" step. Idempotent: runs only when `area` is empty.
+export function ensureSeeded(): { seeded: boolean; counts?: Record<string, number> } {
+  const conn = db();
+  const row = conn.prepare(`SELECT COUNT(*) AS n FROM area`).get() as { n: number };
+  if (row.n > 0) return { seeded: false };
+  const counts = runSeed();
+  return { seeded: true, counts };
+}
+
 // Exported so server actions (e.g. /demo/reset) can re-seed in-process. The
 // `tsx src/lib/server/seed.ts` script entry point at the bottom of this file
 // calls runSeed() and prints counts.

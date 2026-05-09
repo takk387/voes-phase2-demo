@@ -1,11 +1,19 @@
 import Database from 'better-sqlite3';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Inline the schema SQL at build time. Vite's `?raw` suffix bundles the file
+// content as a string, which works for both dev and adapter-node builds.
+import schemaSql from './schema.sql?raw';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = resolve(here, '../../../data/voes-demo.db');
-const SCHEMA_PATH = resolve(here, './schema.sql');
+
+// DATA_DIR env var lets the deploy point at a persistent volume (e.g. Railway
+// volume mounted at /data). Defaults to the project's local `data/` for dev.
+const DATA_DIR = process.env.DATA_DIR
+  ? resolve(process.env.DATA_DIR)
+  : resolve(here, '../../../data');
+const DB_PATH = resolve(DATA_DIR, 'voes-demo.db');
 
 let _db: Database.Database | null = null;
 
@@ -23,8 +31,7 @@ export function db(): Database.Database {
   conn.pragma('journal_mode = WAL');
 
   // Apply schema. Idempotent; CREATE TABLE IF NOT EXISTS throughout.
-  const schema = readFileSync(SCHEMA_PATH, 'utf-8');
-  conn.exec(schema);
+  conn.exec(schemaSql);
 
   _db = conn;
   return conn;
