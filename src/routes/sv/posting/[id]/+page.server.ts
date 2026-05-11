@@ -239,7 +239,14 @@ export const actions: Actions = {
         .get(params.id) ?? { c: 0 }
     ).c > 0;
     if (status?.status === 'open' && !hasPending) {
-      generateNextOffer(params.id, locals.persona.id, locals.persona.role);
+      try {
+        generateNextOffer(params.id, locals.persona.id, locals.persona.role);
+      } catch (e) {
+        // Non-fatal: if next-offer generation fails (e.g. pool exhausted,
+        // duplicate key edge case), the page reload will show the
+        // "eligible pool exhausted" state and let the supervisor escalate.
+        console.error('generateNextOffer failed (non-fatal):', (e as Error).message);
+      }
     }
     redirect(303, `/sv/posting/${params.id}`);
   },

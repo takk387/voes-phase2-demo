@@ -487,8 +487,10 @@ export function generateNextOffer(
 
     if (!result.candidate) return null;
 
-    // Create a real pending offer for the candidate.
-    const offerId = 'ofr-' + posting.id.slice(5) + '-' + result.candidate.employee_id.split('-')[1];
+    // Create a real pending offer for the candidate. Include the cycle number
+    // so the ID stays unique when a cycle reset causes the same employee to
+    // appear again (fixes UNIQUE constraint violation / 500 on cycle wrap).
+    const offerId = 'ofr-' + posting.id.slice(5) + '-' + result.candidate.employee_id.split('-')[1] + '-c' + result.cycle;
     conn
       .prepare(
         `INSERT INTO offer
