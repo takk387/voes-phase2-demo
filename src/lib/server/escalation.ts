@@ -198,7 +198,19 @@ export function executeForceLow(
     if (posting.status !== 'open') throw new Error('posting not open');
 
     const yes = yesCount(posting_id);
-    const needed = posting.volunteers_needed - yes;
+    // Force-already-counted: TMs we've already force-assigned in this posting.
+    // They count toward satisfaction even though their response_type is
+    // supervisor_override (not yes).
+    const alreadyForced = (
+      conn
+        .prepare(
+          `SELECT employee_id FROM offer
+            WHERE posting_id = ? AND phase = 'force_low'`
+        )
+        .all(posting_id) as { employee_id: string }[]
+    ).map((r) => r.employee_id);
+    const forcedSet = new Set(alreadyForced);
+    const needed = posting.volunteers_needed - yes - alreadyForced.length;
     if (needed <= 0) return 0;
 
     const quals = postingQuals(posting_id);
@@ -217,6 +229,7 @@ export function executeForceLow(
     // Reverse for least-senior-first ordering.
     const candidates = [...members].reverse().filter((m) => {
       if (yesSet.has(m.employee_id)) return false;
+      if (forcedSet.has(m.employee_id)) return false;       // idempotent: skip already-forced
       if (!holdsAllQualifications(m.employee_id, quals, posting.work_date)) return false;
       if (isOnApprovedLeave(m.employee_id, posting.work_date)) return false;
       if (m.status !== 'active') return false;
@@ -303,7 +316,8 @@ export function executeForceLow(
       forced++;
     }
 
-    if (forced > 0 && yesCount(posting_id) + forced >= posting.volunteers_needed) {
+    const totalFilled = yesCount(posting_id) + alreadyForced.length + forced;
+    if (totalFilled >= posting.volunteers_needed) {
       conn.prepare(`UPDATE posting SET status = 'satisfied' WHERE id = ?`).run(posting_id);
       conn
         .prepare(
@@ -318,7 +332,43 @@ export function executeForceLow(
         action: 'posting_satisfied',
         area_id: posting.area_id,
         posting_id,
-        data: { via: 'force_low', forced }
+        data: { via: 'force_low', forced, total_force: alreadyForced.length + forced }
+      });
+    } else {
+      // §9.5 STEP 4: "IF i >= len(force_order): flag unable_to_satisfy_mandatory".
+      // We've exhausted eligible candidates and still can't fill the posting.
+      // Mark the escalation outcome explicitly and abandon the posting so
+      // the runner doesn't loop the supervisor back into the force-low button.
+      conn
+        .prepare(`UPDATE posting SET status = 'abandoned', cancelled_reason = ? WHERE id = ?`)
+        .run(`unable to satisfy mandatory: ${posting.volunteers_needed - totalFilled} short after force-low`, posting_id);
+      conn
+        .prepare(`UPDATE offer SET status = 'superseded' WHERE posting_id = ? AND status = 'pending'`)
+        .run(posting_id);
+      conn
+        .prepare(
+          `UPDATE mandatory_escalation_event
+              SET outcome = 'abandoned', outcome_at = ?,
+                  notes = ?
+            WHERE posting_id = ? AND outcome = 'in_progress'`
+        )
+        .run(
+          new Date().toISOString(),
+          `Unable to satisfy: ${posting.volunteers_needed - totalFilled} short after force-low. Per §9.5 STEP 4 (flag unable_to_satisfy_mandatory).`,
+          posting_id
+        );
+      writeAudit({
+        actor_user: 'system',
+        actor_role: 'system',
+        action: 'force_low_unable_to_satisfy',
+        area_id: posting.area_id,
+        posting_id,
+        data: {
+          forced_this_call: forced,
+          forced_total: alreadyForced.length + forced,
+          still_short: posting.volunteers_needed - totalFilled,
+          required: posting.volunteers_needed
+        }
       });
     }
 
