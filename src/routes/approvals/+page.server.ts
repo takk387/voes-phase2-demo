@@ -46,7 +46,7 @@ export const actions: Actions = {
     }
 
     // Admin initiates but cannot approve — dual approval requires two
-    // distinct institutional parties per §3.7 / §22.7.
+    // distinct institutional parties per §3.7.
     if (side === 'company' && persona.role !== 'plant_manager') {
       return fail(403, { error: 'Only Plant Management can approve the company side' });
     }

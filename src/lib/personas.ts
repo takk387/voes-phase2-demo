@@ -24,11 +24,25 @@ export interface Persona {
 
 export const PERSONAS: Persona[] = [
   {
+    id: 'tm-newman',
+    display_name: 'Newman, L. (Paint)',
+    role: 'team_member',
+    employee_id: 'emp-newman-l',
+    description: 'Paint 2nd shift — final mode. Lowest hours offered (32), next-up under Procedure B. Default persona for the walkthrough.'
+  },
+  {
+    id: 'tm-fischer',
+    display_name: 'Fischer, T. (Battery)',
+    role: 'team_member',
+    employee_id: 'emp-fischer-t',
+    description: 'Battery 1st shift — final mode. Lowest hours offered (30), next-up under Procedure B.'
+  },
+  {
     id: 'tm-adams',
-    display_name: 'Adams, R.',
+    display_name: 'Adams, R. (BA2 interim)',
     role: 'team_member',
     employee_id: 'emp-adams-r',
-    description: 'Position 1 — most senior. Welder + forklift. Said YES on yesterday\'s posting.'
+    description: 'BA2 1st — interim mode. Position 1, most senior. Welder + forklift. Said YES yesterday. Shown as the contract-anticipated interim pathway (§22.2 has the parties skipping it in production).'
   },
   {
     id: 'tm-brown',
@@ -66,25 +80,18 @@ export const PERSONAS: Persona[] = [
     description: 'Position 14 — most junior. No quals. Hire 2023-06-07.'
   },
   {
-    id: 'tm-newman',
-    display_name: 'Newman, L. (Paint)',
-    role: 'team_member',
-    employee_id: 'emp-newman-l',
-    description: 'Paint 2nd shift TM. Lowest hours offered (32) — next-up under final-mode lowest-hours-first.'
-  },
-  {
     id: 'sv-garcia',
     display_name: 'Garcia, J. (Supervisor)',
     role: 'supervisor',
     area_scope: ['area-ba2-1st', 'area-battery-1st'],
-    description: 'Supervises BA2 1st (interim mode) and Battery 1st (interim, ready for cutover demo).'
+    description: 'Supervises BA2 1st (interim mode — contract-anticipated alternative) and Battery 1st (final mode). Try posting in Battery to see hours-based selection.'
   },
   {
     id: 'sv-liu',
     display_name: 'Liu, K. (Supervisor)',
     role: 'supervisor',
     area_scope: ['area-paint-2nd', 'area-finish-2nd'],
-    description: 'Supervises Paint 2nd (final mode) and Finish 2nd. Try posting in Paint to see hours-based selection.'
+    description: 'Supervises Paint 2nd (final mode) and Finish 2nd (interim, staged for cutover demo).'
   },
   {
     id: 'ur-rodriguez',
@@ -112,4 +119,4 @@ export function findPersona(id: string | undefined): Persona | undefined {
   return PERSONAS.find((p) => p.id === id);
 }
 
-export const DEFAULT_PERSONA_ID = 'tm-adams';
+export const DEFAULT_PERSONA_ID = 'tm-newman';

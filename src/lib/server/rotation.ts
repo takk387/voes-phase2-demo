@@ -342,7 +342,7 @@ export function areaStanding(area_id: string, on_date: string): AreaStandingRow[
   const lifetimeMap = new Map(lifetimeCharges.map((r) => [r.employee_id, r.n]));
 
   // Hours sums (final mode). Charges may include reversal rows (negative
-  // amount) per §22.5; SUM handles those naturally.
+  // amount) per §22.3; SUM handles those naturally.
   const hoursRows = conn
     .prepare<[string], { employee_id: string; charge_type: string; total: number }>(
       `SELECT employee_id, charge_type, COALESCE(SUM(amount), 0) AS total

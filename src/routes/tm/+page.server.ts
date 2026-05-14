@@ -1,9 +1,10 @@
 // TM-1: Team Member dashboard. Shows the TM's current standing, any pending
 // offer, and recent history. (§11.1, Flow TM-1.)
 
-import type { PageServerLoad } from './$types';
-import { error, redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
+import { writeAudit } from '$lib/server/audit';
 import { areaStanding, getCurrentCycle } from '$lib/server/rotation';
 import { listRemediesByEmployee } from '$lib/server/remedies';
 
@@ -15,8 +16,14 @@ export const load: PageServerLoad = ({ locals }) => {
   const conn = db();
 
   const employee = conn
-    .prepare<[string], { id: string; display_name: string; hire_date: string; status: string }>(
-      `SELECT id, display_name, hire_date, status FROM employee WHERE id = ?`
+    .prepare<[string], {
+      id: string; display_name: string; hire_date: string; status: string;
+      notif_in_app: number; notif_sms: number; notif_email: number;
+      notif_preferences_set_at: string | null;
+    }>(
+      `SELECT id, display_name, hire_date, status,
+              notif_in_app, notif_sms, notif_email, notif_preferences_set_at
+         FROM employee WHERE id = ?`
     )
     .get(persona.employee_id);
   if (!employee) error(404, 'Employee not found');
@@ -102,6 +109,45 @@ export const load: PageServerLoad = ({ locals }) => {
     pendingOffers,
     history,
     teamSize: standing.length,
-    openRemedies
+    openRemedies,
+    needsNotifPrefs: !employee.notif_preferences_set_at
   };
+};
+
+// Notification preferences (first-login modal). In-app is required and
+// cannot be disabled — the system never sends offers off-site by default.
+// SMS / email are opt-in, surfaced as greyed-out checkboxes because no
+// off-site channel is wired in the demo; the row carries the preference
+// regardless so production rollout can pick it up without backfilling.
+export const actions: Actions = {
+  save_notif_prefs: async ({ request, locals }) => {
+    if (locals.persona.role !== 'team_member' || !locals.persona.employee_id) {
+      return fail(403, { error: 'Only team members can save notification preferences.' });
+    }
+    const form = await request.formData();
+    const sms = form.get('notif_sms') === 'on' ? 1 : 0;
+    const email = form.get('notif_email') === 'on' ? 1 : 0;
+    const now = new Date().toISOString();
+
+    db()
+      .prepare(
+        `UPDATE employee
+            SET notif_in_app = 1,
+                notif_sms = ?,
+                notif_email = ?,
+                notif_preferences_set_at = ?
+          WHERE id = ?`
+      )
+      .run(sms, email, now, locals.persona.employee_id);
+
+    writeAudit({
+      actor_user: locals.persona.id,
+      actor_role: 'team_member',
+      action: 'notification_preferences_set',
+      employee_id: locals.persona.employee_id,
+      data: { notif_in_app: 1, notif_sms: sms, notif_email: email }
+    });
+
+    return { saved: true };
+  }
 };

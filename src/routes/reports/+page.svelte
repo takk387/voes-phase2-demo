@@ -23,7 +23,7 @@
       href: '/reports/fairness',
       name: 'Fairness distribution',
       description: 'Distribution of opportunities (interim) or hours offered (final) across active TMs in each area. Areas with deviations exceeding 10% are flagged.',
-      spec: '§15.3 + §22.17 union round 1 default',
+      spec: '§15.3',
       audience: 'Joint Committee, Union, Plant Mgmt'
     },
     {
@@ -36,8 +36,8 @@
     {
       href: '/reports/flex',
       name: 'Flex day usage',
-      description: 'Mandatory Flex-day count per shift against the 24-day annual cap (PS-004A). Voluntary OT is excluded per round 1 union feedback (§22.10).',
-      spec: 'PS-004A + §22.10',
+      description: 'Mandatory Flex-day count per shift against the 24-day annual cap (PS-004A). Voluntary OT is excluded per §22.5.',
+      spec: 'PS-004A + §22.5',
       audience: 'Joint Committee, Plant Mgmt, Union'
     }
   ];

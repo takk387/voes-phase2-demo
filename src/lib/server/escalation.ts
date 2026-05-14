@@ -1,4 +1,4 @@
-// Mandatory escalation (§9.5 Procedure E) with §22.1 union round 1 branching.
+// Mandatory escalation (§9.5 Procedure E) with §22.1 criticality branching.
 //
 // When a posting's normal eligible pool is exhausted before the volunteer
 // count is met, the supervisor can initiate escalation. Behavior branches on
@@ -11,11 +11,11 @@
 //
 //   NON-ESSENTIAL: cascade — extend the qualified pool to TMs in adjacent
 //     active areas. If still short after that, abandon the posting.
-//     (Round 1 union position: do not force for non-essential OT.)
+//     Non-essential OT is never forced.
 //
 // "Adjacent area" is policy-defined. For the demo it's modeled as
 // "any other active area" — the Joint Committee's sub-department escalation
-// resolution per §22.9 will refine this in production.
+// resolution per §22.4 will refine this in production.
 
 import { db, withTransaction } from './db.js';
 import { writeAudit } from './audit.js';
@@ -389,7 +389,7 @@ function enqueueCascadeOffers(
   const offered = alreadyOffered(posting_id);
 
   // Adjacent areas: any other active area. (Production: refined per Joint
-  // Committee per §22.9; for demo we use the broadest definition.)
+  // Committee per §22.4; for demo we use the broadest definition.)
   const adjacentMembers = conn
     .prepare<[string], {
       employee_id: string; display_name: string; hire_date: string; last4_ssn: string; status: string;

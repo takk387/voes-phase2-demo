@@ -31,8 +31,28 @@ export function db(): Database.Database {
   // Apply schema. Idempotent; CREATE TABLE IF NOT EXISTS throughout.
   conn.exec(schemaSql);
 
+  // Idempotent column additions for DBs created before a column existed.
+  // ADD COLUMN is the only schema mutation allowed at runtime; we check
+  // PRAGMA table_info first so reboots are no-ops.
+  runMigrations(conn);
+
   _db = conn;
   return conn;
+}
+
+function runMigrations(conn: Database.Database) {
+  const adds: Array<{ table: string; column: string; ddl: string }> = [
+    { table: 'employee', column: 'notif_in_app',             ddl: 'notif_in_app INTEGER NOT NULL DEFAULT 1' },
+    { table: 'employee', column: 'notif_sms',                ddl: 'notif_sms INTEGER NOT NULL DEFAULT 0' },
+    { table: 'employee', column: 'notif_email',              ddl: 'notif_email INTEGER NOT NULL DEFAULT 0' },
+    { table: 'employee', column: 'notif_preferences_set_at', ddl: 'notif_preferences_set_at TEXT' }
+  ];
+  for (const m of adds) {
+    const cols = conn.prepare(`PRAGMA table_info(${m.table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === m.column)) {
+      conn.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.ddl}`);
+    }
+  }
 }
 
 export function withTransaction<T>(fn: (d: Database.Database) => T): T {

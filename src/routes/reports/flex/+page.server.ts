@@ -1,8 +1,8 @@
-// Flex day usage report (PS-004A + §22.10).
+// Flex day usage report (PS-004A + §22.5).
 //
 // PS-004A caps Mandatory Flex days at 24 per shift per calendar year,
-// equalized between shifts. Per round 1 union feedback (§22.10), voluntary
-// OT is excluded from the count — the cap is for mandatory Flex days only.
+// equalized between shifts. Per §22.5, voluntary OT is excluded from the
+// count — the cap is for mandatory Flex days only.
 //
 // Display: per shift, the year-to-date count of mandatory_flex postings
 // against the 24-day cap; flagged amber at 18-23, red at 24+.

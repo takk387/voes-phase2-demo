@@ -17,7 +17,7 @@
       <span class="font-medium">{data.threshold_pct}%</span> are flagged for review.
     </p>
     <p class="text-xs text-ink-500 mt-1">
-      Threshold per round 1 union proposal (§22.17). Reports surface patterns; they don't assert unfairness.
+      Reports surface patterns; they don't assert unfairness.
     </p>
   </div>
 

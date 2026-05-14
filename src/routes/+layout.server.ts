@@ -5,9 +5,9 @@ import { db } from '$lib/server/db';
 export const load: LayoutServerLoad = ({ locals }) => {
   // The banner only appears for the two approver roles. Admin initiates
   // dual-approval actions but is explicitly NOT an approver — the contract's
-  // dual-approval requirement (§3.7, §22.7) exists precisely so that two
-  // distinct parties (Plant Mgmt + Union) sign off independently. Letting
-  // Admin approve either side would defeat the design.
+  // dual-approval requirement (§3.7) exists precisely so that two distinct
+  // parties (Plant Mgmt + Union) sign off independently. Letting Admin
+  // approve either side would defeat the design.
   let pendingForMe = 0;
   const role = locals.persona.role;
   if (role === 'union_rep') {

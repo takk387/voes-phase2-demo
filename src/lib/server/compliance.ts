@@ -140,7 +140,7 @@ export function runComplianceChecks(): ComplianceCheck[] {
     });
   }
 
-  // 3. Mandatory escalation branch fidelity per §22.1 union round 1.
+  // 3. Mandatory escalation branch fidelity per §22.1.
   {
     const issues: string[] = [];
     const events = conn
@@ -164,12 +164,12 @@ export function runComplianceChecks(): ComplianceCheck[] {
       )
       .all() as { id: string }[];
     if (forceLowNonEssential.length > 0) {
-      issues.push(`${forceLowNonEssential.length} force_low offers on non-essential postings (round 1 union: non-essential never forces)`);
+      issues.push(`${forceLowNonEssential.length} force_low offers on non-essential postings (§22.1: non-essential never forces)`);
     }
     checks.push({
       id: 'escalation_branching',
       name: 'Mandatory escalation respects critical / non-essential split',
-      cba_ref: '§9.5 / §22.1 union round 1',
+      cba_ref: '§9.5 / §22.1',
       pass: issues.length === 0,
       detail: issues.length === 0
         ? `${events.length} escalation events; no branch violations.`
@@ -177,26 +177,40 @@ export function runComplianceChecks(): ComplianceCheck[] {
     });
   }
 
-  // 4. Bypass remedies within window (§22.8 default 90d).
+  // 4. Bypass remedies remain on currently-eligible affected TMs.
+  // Per CBA §5.14 / §10.17, the remedy is the next available assignment —
+  // no time-based expiration. The check fails only when an open remedy
+  // points to a TM who has become ineligible (separated, transferred out
+  // of the area, etc.) and should be closed administratively.
   {
-    const overdue = conn
+    const ineligible = conn
       .prepare(
-        `SELECT id, affected_employee_id, recorded_at FROM bypass_remedy
-          WHERE status = 'open'
-            AND julianday('now') - julianday(recorded_at) > 90`
+        `SELECT br.id, br.affected_employee_id, br.area_id, e.status AS emp_status
+           FROM bypass_remedy br
+           JOIN employee e ON e.id = br.affected_employee_id
+          WHERE br.status = 'open'
+            AND (
+              e.status = 'separated'
+              OR NOT EXISTS (
+                SELECT 1 FROM area_membership m
+                 WHERE m.employee_id = br.affected_employee_id
+                   AND m.area_id = br.area_id
+                   AND m.effective_end_date IS NULL
+              )
+            )`
       )
-      .all() as { id: number; affected_employee_id: string; recorded_at: string }[];
-    const total = (
-      conn.prepare(`SELECT COUNT(*) AS c FROM bypass_remedy`).get() as { c: number }
+      .all() as { id: number; affected_employee_id: string; area_id: string; emp_status: string }[];
+    const open = (
+      conn.prepare(`SELECT COUNT(*) AS c FROM bypass_remedy WHERE status = 'open'`).get() as { c: number }
     ).c;
     checks.push({
-      id: 'remedy_window',
-      name: 'Bypass remedies satisfied within window',
-      cba_ref: '§5.14 / §22.8 (90d default)',
-      pass: overdue.length === 0,
-      detail: overdue.length === 0
-        ? `${total} remedies recorded; none past window.`
-        : `${overdue.length} remedies past 90d — grievance escalation may apply.`
+      id: 'remedy_eligibility',
+      name: 'Open bypass remedies remain on eligible TMs',
+      cba_ref: '§5.14 / §10.17',
+      pass: ineligible.length === 0,
+      detail: ineligible.length === 0
+        ? `${open} open remedies; all affected TMs still eligible.`
+        : `${ineligible.length} remedies need administrative closure (affected TM separated or transferred out).`
     });
   }
 
@@ -215,7 +229,7 @@ export function runComplianceChecks(): ComplianceCheck[] {
     checks.push({
       id: 'dual_approval',
       name: 'Executed high-impact actions had both approvals',
-      cba_ref: '§3.7 / §22.7',
+      cba_ref: '§3.7',
       pass: incomplete.length === 0,
       detail: incomplete.length === 0
         ? `${total} executed actions; all dual-approved.`
@@ -289,7 +303,7 @@ export function runComplianceChecks(): ComplianceCheck[] {
     });
   }
 
-  // 8. Round 1 union §22.4: no_contact never charges (default).
+  // 8. No-contact responses never charge.
   {
     const wrong = conn
       .prepare(
@@ -304,8 +318,8 @@ export function runComplianceChecks(): ComplianceCheck[] {
       .all() as { id: string }[];
     checks.push({
       id: 'no_contact_no_charge',
-      name: 'No-contact responses do not charge (round 1 default)',
-      cba_ref: '§22.4 union round 1',
+      name: 'No-contact responses do not charge',
+      cba_ref: 'operational rule',
       pass: wrong.length === 0,
       detail: wrong.length === 0
         ? `No-contact passthrough verified.`

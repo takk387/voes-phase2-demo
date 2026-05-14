@@ -114,23 +114,18 @@
                 <td class="px-4 py-2 font-medium">{r.affected_employee_name}</td>
                 <td class="px-4 py-2 text-ink-600 text-xs">{r.area_name}</td>
                 <td class="px-4 py-2 text-xs text-ink-600">{new Date(r.recorded_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</td>
-                <td class="px-4 py-2 tabular text-xs">
-                  {age}d
-                  {#if age >= 75 && age < 90}
-                    <span class="badge-amber ml-1">approaching window</span>
-                  {:else if age >= 90}
-                    <span class="badge-red ml-1">past 90d</span>
-                  {/if}
-                </td>
+                <td class="px-4 py-2 tabular text-xs">{age}d</td>
                 <td class="px-4 py-2 text-xs text-ink-700">{r.cause}</td>
               </tr>
             {/each}
           </tbody>
         </table>
         <div class="px-4 py-3 text-xs text-ink-500 border-t border-ink-100">
-          Per §22.8 (default 90 days), remedies not satisfied within the window
-          escalate to the grievance procedure. The system flags but does not
-          act — Joint Committee review.
+          Per CBA §5.14 / §10.17, remedies persist until satisfied — the
+          affected TM is offered the next eligible opportunity ahead of
+          rotation. There is no time-based expiration. Administrative
+          closure applies only when the TM becomes ineligible (separation,
+          permanent transfer out, permanent qual loss).
         </div>
       {/if}
     </div>

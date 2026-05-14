@@ -33,10 +33,8 @@ export type ResponseType =
  * Whether a response type produces an opportunity charge in interim mode.
  *
  * Per Phase 1 plan §4.5 + §4.6, a Yes or No produces a charge; qualification,
- * leave, and on-the-job skips do not. Per round 1 union feedback (§22.4), a
- * no-contact response also does NOT produce a charge — treat it like
- * approved leave for rotation purposes (default subject to Joint Committee
- * confirmation).
+ * leave, and on-the-job skips do not. A no-contact response also does NOT
+ * produce a charge — treat it like approved leave for rotation purposes.
  */
 export function shouldChargeInterim(responseType: ResponseType): boolean {
   switch (responseType) {
@@ -523,8 +521,8 @@ export function generateNextOffer(
 }
 
 /**
- * Cancel a posting. Per round 1 union feedback (§22.5), all charges for the
- * posting are reversed regardless of mode.
+ * Cancel a posting. Per §22.3, all charges for the posting are reversed
+ * regardless of mode.
  */
 export function cancelPosting(
   posting_id: string,

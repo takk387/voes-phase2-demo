@@ -1,13 +1,17 @@
 // Synthetic data seed for the VOES Phase 2 demo.
 //
-// Anchors on BA2 1st shift with the Phase 1 Appendix C cast, plus three
-// additional areas to support Slice 2 / 3 demos:
+// Per the round-2 spec (§22.2: hours-from-day-1, no interim period), the
+// demo now leads with final-mode areas. Interim is shown as the contract-
+// anticipated alternative, not the operating expectation.
 //
-//   BA2 1st shift   — interim mode, 14 TMs (Adams ... Jones)
 //   Paint 2nd shift — FINAL mode, 12 TMs, with realistic hours data
-//                     (matches union round 1 §22.3 default: hours from day 1)
-//   Battery 1st     — interim mode, 10 TMs, ready for cutover demo
-//   Finish 2nd      — interim mode, 8 TMs, smaller area for escalation demo
+//                     (default persona Newman opens the walkthrough here)
+//   Battery 1st     — FINAL mode, 10 TMs, with realistic hours data
+//   BA2 1st shift   — interim mode, 14 TMs (Adams ... Jones) — shown as
+//                     the contract-anticipated interim pathway, which
+//                     §22.2 has the parties skipping in production
+//   Finish 2nd      — interim mode, 8 TMs, smaller area; doubles as the
+//                     escalation-demo area AND the cutover-demo target
 //
 // Specific hire dates the plan calls out are honored:
 //   Khan 2014-03-01, Hansen 2020-02-26, Jones 2023-06-07
@@ -99,7 +103,7 @@ const PAINT_HOURS: Record<string, { offered: number; accepted: number; worked: n
 };
 
 // ============================================================================
-// Battery 1st shift — interim mode, ready for cutover demo
+// Battery 1st shift — final mode, with seeded hours
 // ============================================================================
 const BATTERY_TMS: EmployeeSeed[] = [
   { id: 'emp-thornton-r',  display_name: 'Thornton, R.', first_name: 'Rita',     last_name: 'Thornton', hire_date: '2010-02-15', last4_ssn: '8801', shift: '1st', qualifications: ['qual-high-voltage', 'qual-module-assembly'] },
@@ -113,6 +117,21 @@ const BATTERY_TMS: EmployeeSeed[] = [
   { id: 'emp-ortiz-l',     display_name: 'Ortiz, L.',    first_name: 'Lucia',    last_name: 'Ortiz',    hire_date: '2022-05-26', last4_ssn: '1094', shift: '1st', qualifications: [] },
   { id: 'emp-fischer-t',   display_name: 'Fischer, T.',  first_name: 'Theo',     last_name: 'Fischer',  hire_date: '2023-12-08', last4_ssn: '8836', shift: '1st', qualifications: [] }
 ];
+
+// Hours-state for Battery 1st. After ~8 weeks of final-mode operation.
+// Fischer is lowest offered at 30 — they'll be next-up under Procedure B.
+const BATTERY_HOURS: Record<string, { offered: number; accepted: number; worked: number }> = {
+  'emp-thornton-r':  { offered: 60, accepted: 48, worked: 48 },
+  'emp-velasquez-d': { offered: 52, accepted: 36, worked: 36 },
+  'emp-kovac-i':     { offered: 52, accepted: 44, worked: 44 },
+  'emp-singh-r':     { offered: 48, accepted: 24, worked: 24 },
+  'emp-bauer-w':     { offered: 44, accepted: 40, worked: 40 },
+  'emp-mensah-k':    { offered: 40, accepted: 28, worked: 28 },
+  'emp-doyle-p':     { offered: 40, accepted: 24, worked: 24 },
+  'emp-rao-s':       { offered: 36, accepted: 28, worked: 28 },
+  'emp-ortiz-l':     { offered: 32, accepted: 16, worked: 16 },
+  'emp-fischer-t':   { offered: 30, accepted: 16, worked: 16 }
+};
 
 // ============================================================================
 // Finish 2nd shift — small area, interim mode, escalation demo material
@@ -134,7 +153,7 @@ const FINISH_TMS: EmployeeSeed[] = [
 const AREAS: AreaSeed[] = [
   { id: 'area-ba2-1st',    name: 'BA2 1st shift',         shop: 'Body',    line: 'BA2',         shift: '1st', posting_location: 'Break room board, north wall',  mode: 'interim', members: BA2_TMS },
   { id: 'area-paint-2nd',  name: 'Paint 2nd shift',       shop: 'Paint',   line: 'Top coat',    shift: '2nd', posting_location: 'Spray booth bulletin board',     mode: 'final',   members: PAINT_TMS },
-  { id: 'area-battery-1st',name: 'Battery 1st shift',     shop: 'Battery', line: 'Module asm',  shift: '1st', posting_location: 'Module assembly area kiosk',     mode: 'interim', members: BATTERY_TMS },
+  { id: 'area-battery-1st',name: 'Battery 1st shift',     shop: 'Battery', line: 'Module asm',  shift: '1st', posting_location: 'Module assembly area kiosk',     mode: 'final',   members: BATTERY_TMS },
   { id: 'area-finish-2nd', name: 'Finish 2nd shift',      shop: 'Finish',  line: 'Final/rework',shift: '2nd', posting_location: 'Finish line podium',             mode: 'interim', members: FINISH_TMS }
 ];
 
@@ -363,29 +382,35 @@ function seedBA2History() {
   });
 }
 
-// Paint 2nd bootstrap. Insert one "historical" satisfied posting plus, for
-// each TM, a recorded yes/no offer carrying their pre-seeded hours_offered
+// Final-mode hours bootstrap. Insert one "historical" satisfied posting plus,
+// for each TM, a recorded yes/no offer carrying their pre-seeded hours_offered
 // and (where accepted) hours_accepted as a single charge per type. In real
 // operation these would accumulate from many postings; for the demo we
 // collapse them into one bootstrap posting so the area standing renders
 // realistically without flooding the audit log.
-function seedPaintHistory() {
+function seedFinalHoursBootstrap(opts: {
+  area_id: string;
+  bootstrap_posting_id: string;
+  tms: EmployeeSeed[];
+  hours: Record<string, { offered: number; accepted: number; worked: number }>;
+  audit_action: string;
+}) {
   const conn = db();
   const eightWeeksAgo = new Date(Date.now() - 56 * 24 * 3600 * 1000);
   const wIso = eightWeeksAgo.toISOString().slice(0, 10);
 
-  const bootstrapId = 'post-paint-bootstrap-001';
   conn
     .prepare(
       `INSERT INTO posting
          (id, area_id, ot_type, criticality, work_date, start_time,
           duration_hours, volunteers_needed, notes, posted_by_user,
           posted_at, status)
-       VALUES (?, 'area-paint-2nd', 'voluntary_daily', 'critical', ?, ?,
+       VALUES (?, ?, 'voluntary_daily', 'critical', ?, ?,
                0, 0, ?, 'system-bootstrap', ?, 'satisfied')`
     )
     .run(
-      bootstrapId,
+      opts.bootstrap_posting_id,
+      opts.area_id,
       wIso,
       '14:00',
       'Bootstrap entry — collapsed historical hours for demo. In production each posting would be recorded individually.',
@@ -395,19 +420,19 @@ function seedPaintHistory() {
   writeAudit({
     actor_user: 'system-bootstrap',
     actor_role: 'system',
-    action: 'paint_2nd_history_bootstrap',
-    area_id: 'area-paint-2nd',
-    posting_id: bootstrapId,
+    action: opts.audit_action,
+    area_id: opts.area_id,
+    posting_id: opts.bootstrap_posting_id,
     data: {
-      note: 'Final-mode hours bootstrap for demo. See PAINT_HOURS in seed.ts.',
-      tm_count: PAINT_TMS.length
+      note: 'Final-mode hours bootstrap for demo. See seed.ts.',
+      tm_count: opts.tms.length
     }
   });
 
-  for (const tm of PAINT_TMS) {
-    const h = PAINT_HOURS[tm.id];
+  for (const tm of opts.tms) {
+    const h = opts.hours[tm.id];
     if (!h) continue;
-    const offerId = `ofr-paint-bootstrap-${tm.last_name.toLowerCase().replace(/[^a-z]/g, '')}`;
+    const offerId = `ofr-${opts.area_id}-bootstrap-${tm.last_name.toLowerCase().replace(/[^a-z]/g, '')}`;
 
     conn
       .prepare(
@@ -415,7 +440,7 @@ function seedPaintHistory() {
            (id, posting_id, employee_id, offered_by_user, status)
          VALUES (?, ?, ?, 'system-bootstrap', 'responded')`
       )
-      .run(offerId, bootstrapId, tm.id);
+      .run(offerId, opts.bootstrap_posting_id, tm.id);
 
     conn
       .prepare(
@@ -429,18 +454,18 @@ function seedPaintHistory() {
       .prepare(
         `INSERT INTO charge
            (offer_id, employee_id, area_id, charge_type, amount, mode_at_charge)
-         VALUES (?, ?, 'area-paint-2nd', 'hours_offered', ?, 'final')`
+         VALUES (?, ?, ?, 'hours_offered', ?, 'final')`
       )
-      .run(offerId, tm.id, h.offered);
+      .run(offerId, tm.id, opts.area_id, h.offered);
 
     if (h.accepted > 0) {
       conn
         .prepare(
           `INSERT INTO charge
              (offer_id, employee_id, area_id, charge_type, amount, mode_at_charge)
-           VALUES (?, ?, 'area-paint-2nd', 'hours_accepted', ?, 'final')`
+           VALUES (?, ?, ?, 'hours_accepted', ?, 'final')`
         )
-        .run(offerId, tm.id, h.accepted);
+        .run(offerId, tm.id, opts.area_id, h.accepted);
     }
 
     if (h.worked > 0) {
@@ -448,9 +473,9 @@ function seedPaintHistory() {
         .prepare(
           `INSERT INTO charge
              (offer_id, employee_id, area_id, charge_type, amount, mode_at_charge)
-           VALUES (?, ?, 'area-paint-2nd', 'hours_worked', ?, 'final')`
+           VALUES (?, ?, ?, 'hours_worked', ?, 'final')`
         )
-        .run(offerId, tm.id, h.worked);
+        .run(offerId, tm.id, opts.area_id, h.worked);
     }
   }
 }
@@ -477,7 +502,20 @@ export function runSeed(): Record<string, number> {
     seedQualifications();
     for (const area of AREAS) seedArea(area);
     seedBA2History();
-    seedPaintHistory();
+    seedFinalHoursBootstrap({
+      area_id: 'area-paint-2nd',
+      bootstrap_posting_id: 'post-paint-bootstrap-001',
+      tms: PAINT_TMS,
+      hours: PAINT_HOURS,
+      audit_action: 'paint_2nd_history_bootstrap'
+    });
+    seedFinalHoursBootstrap({
+      area_id: 'area-battery-1st',
+      bootstrap_posting_id: 'post-battery-bootstrap-001',
+      tms: BATTERY_TMS,
+      hours: BATTERY_HOURS,
+      audit_action: 'battery_1st_history_bootstrap'
+    });
   });
 
   const conn = db();

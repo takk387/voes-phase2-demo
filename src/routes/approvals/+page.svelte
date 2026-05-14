@@ -28,7 +28,7 @@
     <p class="text-sm text-ink-600 mt-0.5">
       High-impact actions (mode cutover, annual zero-out, structural changes)
       require both Plant Management and Union sign-off before executing
-      (§22.7, confirmed in round 1 union feedback).
+      (§3.7).
     </p>
   </div>
 

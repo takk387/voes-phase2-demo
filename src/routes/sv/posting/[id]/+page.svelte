@@ -207,10 +207,9 @@
             </form>
           {:else}
             <p class="text-sm text-ink-800">
-              <span class="font-medium">Non-essential OT.</span> Per round 1 union
-              feedback (§22.1), there is no force phase. The next step is to canvas
-              qualified TMs from adjacent units; if still no takers, the posting is
-              abandoned.
+              <span class="font-medium">Non-essential OT.</span> Per §22.1, there
+              is no force phase. The next step is to canvas qualified TMs from
+              adjacent units; if still no takers, the posting is abandoned.
             </p>
             <form method="POST" action="?/escalate" use:enhance>
               <button class="btn-primary" type="submit">Canvas adjacent units</button>
@@ -231,7 +230,7 @@
           <!-- Non-essential: cascade exhausted, offer abandonment -->
           <p class="text-sm text-ink-800">
             Cascade to adjacent units exhausted with {data.posting.volunteers_needed - data.yes_count} still short.
-            Per round 1 union feedback (§22.1), non-essential OT is not forced.
+            Per §22.1, non-essential OT is not forced.
             The remaining option is to abandon the posting.
           </p>
           <form method="POST" action="?/abandon" use:enhance class="flex gap-2 max-w-xl">
@@ -321,7 +320,7 @@
         <button type="submit" class="btn-danger">Cancel posting</button>
       </form>
       <p class="text-xs text-ink-500 mt-1">
-        Per round 1 union feedback (§22.5), cancellation reverses all charges.
+        Per §22.3, cancellation reverses all charges.
       </p>
     </details>
   {/if}

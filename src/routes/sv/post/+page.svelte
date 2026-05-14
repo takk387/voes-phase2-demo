@@ -42,8 +42,8 @@
             <option value="non_essential">Non-essential &mdash; do not force</option>
           </select>
           <p class="text-xs text-ink-500 mt-1">
-            Determines escalation behavior if volunteers fall short. Per round 1
-            union feedback (§22.1): non-essential cascades to adjacent units, no force.
+            Determines escalation behavior if volunteers fall short. Per §22.1:
+            non-essential cascades to adjacent units, no force.
           </p>
         </div>
       </div>

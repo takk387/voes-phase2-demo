@@ -14,7 +14,7 @@
       <h1 class="text-2xl font-semibold">Flex day usage &mdash; {data.year}</h1>
       <p class="text-sm text-ink-600 mt-0.5">
         Mandatory Flex-day count per shift against the {data.annual_cap}-day annual cap (PS-004A).
-        Per round 1 union feedback (§22.10), voluntary OT is excluded from this count.
+        Per §22.5, voluntary OT is excluded from this count.
       </p>
     </div>
     <a href="/reports" class="text-sm text-accent-700 hover:underline">&larr; all reports</a>
@@ -100,7 +100,7 @@
   </div>
 
   <p class="text-xs text-ink-500">
-    Per §22.10 default: track and surface only — do not block scheduling.
+    Per §22.5: track and surface only — do not block scheduling.
     Joint Committee may adjust to "track and enforce" at any time.
   </p>
 </div>

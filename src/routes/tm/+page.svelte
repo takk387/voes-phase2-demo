@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { PageData } from './$types';
+  import type { ActionData, PageData } from './$types';
+  import { enhance } from '$app/forms';
 
-  interface Props { data: PageData; }
-  let { data }: Props = $props();
+  interface Props { data: PageData; form?: ActionData; }
+  let { data, form }: Props = $props();
 
   function formatDateTime(iso: string | null): string {
     if (!iso) return '';
@@ -28,7 +29,74 @@
   }
 </script>
 
+<!--
+  First-login notification preferences modal. Appears once per TM until
+  they save preferences. The system never sends offers off-site by default;
+  in-app is required, SMS/email are opt-in. (Operational notification
+  policy — absorbed from old §22.4 into defaults during round-2 cleanup.)
+-->
+{#if data.needsNotifPrefs}
+  <div class="fixed inset-0 z-50 bg-ink-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded shadow-xl max-w-lg w-full">
+      <div class="px-5 py-4 border-b border-ink-200">
+        <h2 class="text-lg font-semibold">How should we reach you?</h2>
+        <p class="text-sm text-ink-600 mt-1">
+          One-time setup. You're in the system for the first time.
+        </p>
+      </div>
+      <form method="POST" action="?/save_notif_prefs" use:enhance class="px-5 py-4 space-y-4">
+        <p class="text-sm text-ink-700">
+          By default, the system never reaches you off-site. Offers appear here
+          in the app. You can opt in to extra channels if they're wired up.
+        </p>
+
+        <label class="flex items-start gap-3 cursor-not-allowed">
+          <input type="checkbox" checked disabled class="mt-1" />
+          <div>
+            <div class="font-medium text-sm">In-app (required)</div>
+            <div class="text-xs text-ink-500">
+              Offers show on this dashboard. Always on — this is the only channel
+              that can guarantee delivery without contacting you off-site.
+            </div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 opacity-60">
+          <input type="checkbox" name="notif_sms" disabled class="mt-1" />
+          <div>
+            <div class="font-medium text-sm">SMS text message</div>
+            <div class="text-xs text-ink-500">
+              Channel not configured in this demo. In production, you'd consent
+              here and provide a number. The preference is recorded either way.
+            </div>
+          </div>
+        </label>
+
+        <label class="flex items-start gap-3 opacity-60">
+          <input type="checkbox" name="notif_email" disabled class="mt-1" />
+          <div>
+            <div class="font-medium text-sm">Email</div>
+            <div class="text-xs text-ink-500">
+              Channel not configured in this demo.
+            </div>
+          </div>
+        </label>
+
+        <div class="pt-3 border-t border-ink-200 flex justify-end">
+          <button type="submit" class="btn-primary">Save preferences</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
 <div class="space-y-6">
+  {#if form?.saved}
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded p-3">
+      Notification preferences saved. You can change them later from your profile.
+    </div>
+  {/if}
+
   <div>
     <h1 class="text-2xl font-semibold text-ink-900">Hi, {data.employee.display_name.split(',')[0]}.</h1>
     <p class="text-sm text-ink-600 mt-0.5">

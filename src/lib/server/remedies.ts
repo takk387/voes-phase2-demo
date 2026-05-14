@@ -6,14 +6,18 @@
 // hours. Errors that aren't bypasses (calculation errors, qualification
 // status drift) follow the same workflow.
 //
+// Per the round-2 spec, remedies have NO time-based expiration. They
+// persist until satisfied (the affected TM is offered a next eligible
+// opportunity) or until the TM becomes ineligible (separation, permanent
+// transfer out of the area, permanent qual loss). Administrative closure
+// for ineligible TMs is a Joint Committee decision, not automatic.
+//
 // Slice 3 implementation:
 //   1. Supervisor flags a bypass — opens a bypass_remedy row, status='open'.
 //   2. Next eligible offer in the area where the affected TM is qualified
 //      and available is queued for THAT TM, ahead of normal rotation.
 //   3. Once the remedy offer's response is recorded, the bypass_remedy is
 //      marked status='satisfied'.
-//   4. If §22.8's window expires (default 90 days), the remedy escalates
-//      to the grievance procedure (the system flags but does not act).
 
 import { db } from './db.js';
 import { writeAudit } from './audit.js';
@@ -221,8 +225,8 @@ export function listRemediesByEmployee(employee_id: string): BypassRemedyView[] 
 }
 
 /**
- * Days since a remedy was recorded — for §22.8 grievance escalation window
- * (default 90 days).
+ * Days since a remedy was recorded — for display only. Remedies have no
+ * time-based expiration per the round-2 spec.
  */
 export function ageDays(recorded_at: string): number {
   const ms = Date.now() - new Date(recorded_at).getTime();

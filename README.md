@@ -62,7 +62,7 @@ src/lib/server/
 ├── rotation.ts         # Procedures A (interim) and B (final) + areaStanding
 ├── offers.ts           # offer lifecycle + final-mode charges + remedy hooks
 ├── remedies.ts         # bypass remedy precedence and lifecycle
-├── escalation.ts       # Procedure E + §22.1 non-essential cascade
+├── escalation.ts       # Procedure E + §22.1 criticality split (non-essential cascade)
 ├── cutover.ts          # Procedure D + zero-out + dual-approval queue
 ├── structural.ts       # area split / merge / retire
 ├── compliance.ts       # 8 CBA-fidelity invariant checks

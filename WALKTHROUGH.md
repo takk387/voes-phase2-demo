@@ -2,7 +2,7 @@
 
 **Audience:** Joint Committee, plant management, local Union, ideas-program reviewers.
 **Length:** 20 minutes if you click through everything; 10 if you skip the open-ended exploration at the end.
-**Setup:** Browser open to the demo URL. Default persona is Adams (Team Member). State should be freshly seeded; if not, run `npm run seed` to reset.
+**Setup:** Browser open to the demo URL. Default persona is Newman (Team Member, Paint 2nd — final mode). State should be freshly seeded; if not, run `npm run seed` to reset.
 
 The walkthrough follows the order an OT opportunity flows through the system: a TM checks their standing, a Supervisor posts and runs the rotation, errors and edge cases get handled, and the periodic operations (cutover, zero-out, structural changes) happen on a longer cadence. Pause for questions at any of the marked moments.
 
@@ -10,39 +10,48 @@ The walkthrough follows the order an OT opportunity flows through the system: a 
 
 ## 1. The Team Member's view (3 min)
 
-**Persona:** Adams, R. — Team Member, BA2 1st shift, position 1 (most senior). _Default on first open._
+**Persona:** Newman, L. — Team Member, Paint 2nd shift, final mode. _Default on first open._
+
+**Notification preferences (first-login beat — 30 sec):**
+
+When the page first loads you get a one-time modal: "How should we reach you?" In-app is required and checked; SMS and email are listed but greyed out as "channel not configured in this demo." Click **Save preferences**. The choice is recorded in the audit log.
+
+> Per the spec's notification policy, the system never reaches a TM off-site by default. Offers appear in the app; off-site channels are opt-in if and when they're wired up. The TM controls the channel — not the Supervisor, not Admin.
 
 **What to show:**
 
-- **Dashboard** — Adams's standing in BA2 1st: cycle 1, position 1 of 14, 1 opportunity offered this cycle, qualifications listed.
-- **"Recent offers"** card — yesterday's stay-over, "You said: YES."
-- Click **"View full area equalization list"** — every TM in BA2 1st with their current standing, sorted by seniority. This is the digital equivalent of the paper rotation list the contract calls "openly displayed."
+- **Dashboard** — Newman's standing in Paint 2nd: **hours offered / accepted / worked** (final mode shows hours, not cycle/opportunity counts).
+- Standing card explanation: "The next opportunity goes to the qualified TM with the lowest hours offered."
+- Click **"View full area equalization list"** — every TM in Paint 2nd sorted by hours offered, lowest first, with Newman at top (32h) and a "next up" badge.
 
 **Talking points:**
 
 - A Team Member can check their own standing from any device, any time, including from outside the plant.
 - The full area list is visible to every TM in the area — no information asymmetry between Supervisor and TMs.
 - Today, doing this requires walking to the area's whiteboard or asking the Supervisor.
+- This is final mode — hours-based equalization. Per §22.2, this is the operating expectation: hours-from-day-1, with an implementation grace agreement during initial rollout.
 
 **Pause:** _Any questions about the TM experience?_
 
 ---
 
-## 2. Switch to Newman — final-mode TM (1 min)
+## 2. Switch to Adams — the interim pathway (1 min)
 
-**Persona:** Newman, L. — Team Member, Paint 2nd shift.
+**Persona:** Adams, R. — Team Member, BA2 1st shift, interim mode.
+
+The notification modal appears again — this is a different TM logging in for the first time. Save and continue.
 
 **What to show:**
 
-- Newman's dashboard now shows **hours offered / accepted / worked** instead of cycle / opportunity counts.
-- Standing card explanation: "The next opportunity goes to the qualified TM with the lowest hours offered."
-- Area equalization list — same area but now sorted by hours offered (lowest first), with Newman at top with 32 hours offered, "next up" badge.
+- Adams's dashboard now shows **cycle / position / opportunities offered**, not hours.
+- Recent offers card — yesterday's stay-over, "You said: YES."
+- Area equalization list sorted by seniority, with cycle-offered indicators per TM.
 
 **Talking points:**
 
-- Two equalization modes: **interim** (opportunity-based, what BA2 1st uses) and **final** (hours-based, what Paint 2nd uses).
+- Two equalization modes: **final** (hours-based, what Paint 2nd uses) and **interim** (opportunity-based, what BA2 1st uses).
 - The contract anticipates both. The system supports both. The cutover from interim to final is a defined, auditable event.
-- Per round 1 union feedback (§22.3), the operating expectation is hours-from-day-1 with an "implementation grace" agreement during initial rollout.
+- Per §22.2, the parties have agreed to skip interim mode in production — hours-from-day-1 is the operating expectation. The system retains interim because the contract explicitly anticipates it, and because §22.2 still needs Joint Committee ratification. If something changes, the pathway is here.
 
 ---
 
@@ -77,7 +86,7 @@ The walkthrough follows the order an OT opportunity flows through the system: a 
 
 ## 4. The criticality split — escalation (4 min)
 
-This is the centerpiece of the §22.1 round 1 union feedback. There are two branches:
+This is the centerpiece of §22.1. There are two branches:
 
 **Setup:** Switch to Liu and post a 1-volunteer opportunity in **Finish 2nd** (the small 8-TM area). Set criticality = Critical. Then on the rotation runner, click "Record NO" repeatedly until the eligible pool is exhausted (8 NOs).
 
@@ -121,9 +130,9 @@ This is the centerpiece of the §22.1 round 1 union feedback. There are two bran
 
 **Talking points:**
 
-- Per CBA §5.14, bypass errors are remedied with the next available assignment, **not pay**. The system enforces that.
+- Per CBA §5.14 / §10.17, bypass errors are remedied with the next available assignment, **not pay**. The system enforces that.
 - Hansen's offer takes precedence; once she gets _any_ response (Yes / No / skip), the remedy is satisfied. The remedy doesn't depend on her saying yes.
-- Per §22.8 default (90 days), remedies past window flag for grievance-procedure escalation. The system surfaces but doesn't act.
+- Remedies persist until satisfied. There is no time-based expiration — the contract protects the affected TM's position indefinitely. Administrative closure applies only if the TM becomes ineligible (separation, permanent transfer out, permanent qual loss); the system surfaces those cases, the parties decide.
 
 ---
 
@@ -133,21 +142,22 @@ This is the centerpiece of the §22.1 round 1 union feedback. There are two bran
 
 **What to show:**
 
-1. On the Admin dashboard, see the four areas with their current modes. Battery 1st is interim.
-2. Click **"Initiate cutover →"** on Battery 1st. Land on the Approval queue with the cutover pending.
+1. On the Admin dashboard, see the four areas with their current modes. Paint 2nd and Battery 1st are in final mode (the operating expectation per §22.2); BA2 1st and Finish 2nd are in interim mode (the contract-anticipated alternative). We'll demonstrate cutover on Finish 2nd — the smaller area, simpler to follow.
+2. Click **"Initiate cutover →"** on Finish 2nd. Land on the Approval queue with the cutover pending.
 3. Switch to **Williams (Plant Mgmt)**. Notice the **amber banner at the top of every page**: "Company approval needed — 1 action awaiting your sign-off."
 4. Click into Approvals, click "Approve as Plant Mgmt." Banner disappears for Williams.
 5. Switch to **Rodriguez (Union Rep)**. The same banner now appears: "Union approval needed — 1 action awaiting your sign-off."
 6. Click into Approvals, click "Approve as Union." Cutover **executes automatically**.
-7. Switch back to Admin. Battery 1st is now in final mode with a "first cycle" badge.
-8. Switch to Garcia, post in Battery — the runner picks Thornton (most senior), with a **"first cycle after cutover"** explanation: "offers go in seniority order until every member has been offered."
+7. Switch back to Admin. Finish 2nd is now in final mode with a "first cycle" badge.
+8. Switch to Liu (Supervisor for Paint 2nd + Finish 2nd), post in Finish — the runner picks Howard (most senior, hire 2011), with a **"first cycle after cutover"** explanation: "offers go in seniority order until every member has been offered."
 
 **Talking points:**
 
 - Three different roles are involved in a single dual-approval action. None of them can do it alone.
 - The amber banner is **role-aware**: Union Rep sees it only when their side is pending, Plant Mgmt only when theirs is pending. **Admin sees no banner** — admin initiates but cannot approve, by design.
 - The first-cycle-after-cutover override matches PS-036's literal text: "new opportunities will be offered first in seniority order, and thereafter by low hours."
-- After Thornton and the rest of the Battery cast have been offered once, the flag flips automatically to false and Procedure B (lowest hours first) takes over.
+- After Howard and the rest of the Finish 2nd cast have been offered once, the flag flips automatically to false and Procedure B (lowest hours first) takes over.
+- Production won't typically run a cutover from interim to final — §22.2 has the parties skipping interim. The system retains this pathway because the contract anticipates it and because §22.2 still needs Joint Committee ratification.
 
 **Pause:** _Any questions about dual approval?_
 
@@ -177,10 +187,10 @@ Click into **Reports** from the footer.
 
 **Walk through each card briefly:**
 
-- **Compliance summary** — auto-generated CBA-fidelity checks: hash chain, cycle integrity, escalation branch fidelity, remedy windows, dual approvals, leave preservation. Each check cites its CBA reference. This is what a Joint Committee meeting packet leads with.
-- **Fairness distribution** — per-area mean / max / max deviation. Areas where any TM deviates more than 10% from the area mean are flagged amber. Round 1 union proposal (§22.17).
+- **Compliance summary** — auto-generated CBA-fidelity checks: hash chain, cycle integrity, escalation branch fidelity, remedy eligibility, dual approvals, leave preservation. Each check cites its CBA reference. This is what a Joint Committee meeting packet leads with.
+- **Fairness distribution** — per-area mean / max / max deviation. Areas where any TM deviates more than 10% from the area mean are flagged amber.
 - **Qualification gap** — per area, qualified TMs vs. qual-required posting volume. Surfaces capacity constraints for the Joint Training Committee. Does **not** name individuals.
-- **Flex day usage** — per shift, mandatory Flex-day count vs. the 24-day annual cap. Per round 1 (§22.10), voluntary OT is excluded. Track-and-surface only by default; Joint Committee can switch to enforce.
+- **Flex day usage** — per shift, mandatory Flex-day count vs. the 24-day annual cap. Per §22.5, voluntary OT is excluded. Track-and-surface only by default; Joint Committee can switch to enforce.
 
 **Talking points:**
 
@@ -191,15 +201,17 @@ Click into **Reports** from the footer.
 
 ## 9. Open questions to surface (open-ended)
 
-The system surfaces **18 Decisions Required** items in plan §22 for the Joint Committee to resolve. Round 1 union feedback has shifted defaults on several; the rest are open. A short list to flag during the demo:
+The system surfaces **6 policy-decision items** in plan §22. Four have agreed union positions awaiting formal Joint Committee ratification; two remain genuinely open. A short list to flag during the demo:
 
-- §22.2: Annual zero-out date — open
-- §22.6: Audit log retention period — open (union pending consult on grievance retention standards)
-- §22.8: Bypass remedy window — open (90-day placeholder)
-- §22.17: Fairness deviation threshold — round 1 proposed 10%; my counter-recommendation is to start there with a minimum-area-size floor for noise control
-- §22.18: Skilled Trades — flagged for separate native system rather than the equalization carve-out alone
+**Awaiting Joint Committee ratification (positions agreed):**
+- §22.1: Escalation criticality split (critical → force-low / non-essential → cascade then abandon)
+- §22.2: Skip interim mode; hours-from-day-1 with implementation grace
+- §22.3: Always reverse charges on posting cancellation
+- §22.5: 24-day Flex cap applies to mandatory Flex days only; voluntary OT excluded
 
-The complete log of round 1 feedback is in `Union_Feedback_Log.md` in the project root; future rounds append.
+**Genuinely open:**
+- §22.4: Sub-department escalation event format and approval flow
+- §22.6: Specialty position carve-out scope (and whether Skilled Trades needs a separate native system)
 
 ---
 

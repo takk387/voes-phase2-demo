@@ -1,13 +1,12 @@
 // Fairness report (§15.3). Per area, computes the distribution of OT
 // opportunities across active TMs and flags areas with deviations exceeding
-// the threshold. Round 1 union proposal (§22.17) is fixed 10%; this is
-// the default but is configurable.
+// the threshold. Default threshold is fixed 10%; configurable.
 
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 
-const FAIRNESS_THRESHOLD_PCT = 10; // §22.17 default
+const FAIRNESS_THRESHOLD_PCT = 10; // operational default
 
 interface MemberStats {
   employee_id: string;

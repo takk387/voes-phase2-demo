@@ -1,5 +1,5 @@
 // Mode cutover and annual zero-out. High-impact admin actions per Phase 1
-// plan §14.1, §14.2; both require dual approval per §22.7 default.
+// plan §14.1, §14.2; both require dual approval per §3.7.
 //
 // Flow for each:
 //   1. Admin initiates  -> pending_approval row created (status: pending)

@@ -58,7 +58,11 @@ CREATE TABLE IF NOT EXISTS employee (
   status          TEXT NOT NULL DEFAULT 'active'
                   CHECK(status IN ('active','on_leave','separated')),
   specialty_role  TEXT
-                  CHECK(specialty_role IS NULL OR specialty_role IN ('TL','EO','ST'))
+                  CHECK(specialty_role IS NULL OR specialty_role IN ('TL','EO','ST')),
+  notif_in_app             INTEGER NOT NULL DEFAULT 1,
+  notif_sms                INTEGER NOT NULL DEFAULT 0,
+  notif_email              INTEGER NOT NULL DEFAULT 0,
+  notif_preferences_set_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS area_membership (
@@ -112,7 +116,7 @@ CREATE TABLE IF NOT EXISTS posting (
                         'voluntary_daily','voluntary_weekend','voluntary_holiday',
                         'mandatory_flex','late_add'
                       )),
-  -- Critical vs. non-essential drives escalation per §22.1 round 1 union.
+  -- Critical vs. non-essential drives escalation per §22.1.
   criticality         TEXT NOT NULL DEFAULT 'critical'
                       CHECK(criticality IN ('critical','non_essential')),
   work_date           TEXT NOT NULL,
@@ -258,7 +262,7 @@ CREATE TABLE IF NOT EXISTS annual_zero_out_event (
 );
 
 -- ============================================================================
--- Dual-approval queue (§3.7, §22.7)
+-- Dual-approval queue (§3.7)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS pending_approval (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,7 +284,7 @@ CREATE TABLE IF NOT EXISTS pending_approval (
 );
 
 -- ============================================================================
--- Mandatory escalation events (§9.5 Procedure E + §22.1 union round 1)
+-- Mandatory escalation events (§9.5 Procedure E + §22.1)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS mandatory_escalation_event (
   id                            INTEGER PRIMARY KEY AUTOINCREMENT,
