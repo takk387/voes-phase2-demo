@@ -139,7 +139,33 @@ CREATE TABLE IF NOT EXISTS posting_qualification (
   PRIMARY KEY (posting_id, qualification_id)
 );
 
+-- Skilled-Trades soft (preferred) qualifications on a posting. Distinct from
+-- posting_qualification (hard gate) — rotation orders by preferred-match count
+-- as a tiebreak but never excludes a candidate for missing one.
+CREATE TABLE IF NOT EXISTS posting_preferred_qualification (
+  posting_id       TEXT NOT NULL REFERENCES posting(id),
+  qualification_id TEXT NOT NULL REFERENCES qualification(id),
+  PRIMARY KEY (posting_id, qualification_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_posting_area_status ON posting(area_id, status);
+
+-- ============================================================================
+-- Shift patterns (Skilled Trades — SKT-04A pages 213-217, internal)
+-- ============================================================================
+-- One row per named pattern (fixed_day, 4_crew_12h_rotating, etc.). calendar_json
+-- holds a 2D array [crew_idx][day_in_cycle] -> 'D' | 'N' | 'A' | 'RDO'. Cycle
+-- math reads days_since_anchor mod cycle_length_days to index in. Production
+-- employees have shift_pattern_id NULL and continue using the legacy
+-- employee.shift field.
+CREATE TABLE IF NOT EXISTS shift_pattern (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                TEXT NOT NULL UNIQUE,
+  cycle_length_days   INTEGER NOT NULL,
+  crew_count          INTEGER NOT NULL,
+  calendar_json       TEXT NOT NULL,
+  description         TEXT
+);
 
 -- ============================================================================
 -- Offers and responses

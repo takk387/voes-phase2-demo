@@ -135,14 +135,21 @@ Write tests in phase2/src/lib/server/schema_migration.test.ts:
 ```
 
 **Done When:**
-- [ ] Schema changes shipped in `schema.ts`
-- [ ] Migration runner adds columns + tables idempotently on existing Railway DB
-- [ ] `shift_pattern` + `posting_preferred_qualification` tables created
-- [ ] `shift_pattern_id` + `crew_position` + `cycle_anchor_date` on employee
-- [ ] Existing production seed runs cleanly (4 areas, 44 employees, 69 charges)
-- [ ] New columns have correct defaults verified via PRAGMA
-- [ ] `npm run check` clean, `npm run build` clean
-- [ ] Reset demo on deployed Railway confirms production behavior unchanged
+- [x] Schema changes shipped in `schema.ts`
+- [x] Migration runner adds columns + tables idempotently on existing Railway DB
+- [x] `shift_pattern` + `posting_preferred_qualification` tables created
+- [x] `shift_pattern_id` + `crew_position` + `cycle_anchor_date` on employee
+- [x] Existing production seed runs cleanly (4 areas, 44 employees, 69 charges)
+- [x] New columns have correct defaults verified via PRAGMA
+- [x] `npm run check` clean, `npm run build` clean
+- [ ] Reset demo on deployed Railway confirms production behavior unchanged *(manual — push and click Reset Demo)*
+
+**Completion notes (2026-05-14):**
+- Tests: 24/24 pass in `phase2/src/lib/server/schema_migration.test.ts` (idempotency × 2, new tables, area/employee/posting/charge columns with default + CHECK verification, production seed compatibility, ST-shape inserts).
+- Vitest installed as a dev dep (^2.1.9) + `npm test` / `npm run test:watch` scripts + minimal `vitest.config.ts` that skips the SvelteKit plugin (server-side tests only, no jsdom).
+- Plan deviation flagged: the plan said "production employees leave classification NULL" but `employee.classification` already existed as `NOT NULL DEFAULT 'production'`. Repurposed in place — production keeps `'production'`, ST employees get specific trade names (Electrician, Millwright, ToolMaker, PipeFitter). Comment in `db.ts` documents this. No code change needed in production seed.
+- All new column additions live in `runMigrations()` (not the `CREATE TABLE` schema) so they apply identically to fresh DBs and the existing Railway DB on next boot. The new tables (`shift_pattern`, `posting_preferred_qualification`) use `CREATE TABLE IF NOT EXISTS` in `schemaSql`.
+- Seed counts unchanged: 4 areas / 44 employees / 69 charges / 12 compliance checks still apply.
 
 ---
 
@@ -1001,7 +1008,7 @@ end-to-end and confirming every UI element actually exists.
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 1 | Schema additions for area_type + ST fields + shift_pattern table + soft quals + classification | ⬜ |
+| 1 | Schema additions for area_type + ST fields + shift_pattern table + soft quals + classification | ✅ |
 | 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ⬜ |
 | 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ⬜ |
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ⬜ |

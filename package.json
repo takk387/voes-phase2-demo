@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "start": "node build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "seed": "tsx src/lib/server/seed.ts"
+    "seed": "tsx src/lib/server/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.2.12",
@@ -24,7 +26,8 @@
     "tailwindcss": "^3.4.15",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0"
