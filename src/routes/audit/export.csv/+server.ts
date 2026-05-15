@@ -21,7 +21,14 @@ function csvEscape(v: unknown): string {
 
 export const GET: RequestHandler = async ({ locals, url }) => {
   const persona = locals.persona;
-  if (!['union_rep', 'supervisor', 'plant_manager', 'admin'].includes(persona.role)) {
+  // ST roles inherit the same export authorization + area-scope filter as
+  // production supervisor + union_rep. Each ST role's persona definition
+  // carries an area_scope, so the filter falls out of the same code path.
+  const EXPORT_AUTHORIZED_ROLES = new Set([
+    'union_rep', 'supervisor', 'plant_manager', 'admin',
+    'st_supervisor', 'skt_coordinator', 'skt_tl'
+  ]);
+  if (!EXPORT_AUTHORIZED_ROLES.has(persona.role)) {
     error(403, 'Not authorized to export audit data');
   }
 
@@ -33,10 +40,13 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   const where: string[] = [];
   const params: (string | number)[] = [];
 
+  const AREA_SCOPED_ROLES = new Set([
+    'supervisor', 'union_rep', 'st_supervisor', 'skt_coordinator', 'skt_tl'
+  ]);
   if (persona.role === 'team_member' && persona.employee_id) {
     where.push('(employee_id = ? OR actor_user = ?)');
     params.push(persona.employee_id, persona.id);
-  } else if ((persona.role === 'supervisor' || persona.role === 'union_rep') && persona.area_scope?.length) {
+  } else if (AREA_SCOPED_ROLES.has(persona.role) && persona.area_scope?.length) {
     const placeholders = persona.area_scope.map(() => '?').join(',');
     where.push(`(area_id IN (${placeholders}) OR area_id IS NULL)`);
     params.push(...persona.area_scope);

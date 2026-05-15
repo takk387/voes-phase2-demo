@@ -15,5 +15,14 @@ export const load: PageServerLoad = ({ locals }) => {
       redirect(303, '/approvals');
     case 'admin':
       redirect(303, '/admin');
+    // Skilled-Trades roles land on /audit until their dedicated dashboards
+    // ship in Step 6 (/coord, /skt-tl) and Step 7 (/sv/approvals queue for
+    // st_supervisor). Audit is read-only, area-scope-aware, and surfaces
+    // the seeded ST audit entries so reviewers can validate the persona
+    // switched correctly even before the role-specific dashboards exist.
+    case 'st_supervisor':
+    case 'skt_coordinator':
+    case 'skt_tl':
+      redirect(303, '/audit');
   }
 };

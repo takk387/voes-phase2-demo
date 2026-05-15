@@ -1,8 +1,8 @@
 // Audit log view. Available to all roles, with jurisdiction-aware filtering:
 //   - Team Member: only their own entries
-//   - Supervisor: their area scope
-//   - Union Rep: their area scope
-//   - Admin: everything
+//   - Supervisor / ST Supervisor / STAC Coordinator / Skilled Trades TL /
+//     Union Rep: their area scope
+//   - Plant Manager / Admin: everything
 //
 // (§11.4 Flows UR-1, UR-2; §16.3 audit log access.)
 
@@ -20,11 +20,18 @@ export const load: PageServerLoad = ({ locals, url }) => {
   const where: string[] = [];
   const params: (string | number)[] = [];
 
-  // Jurisdiction filtering.
+  // Jurisdiction filtering. The 3 new ST roles (st_supervisor,
+  // skt_coordinator, skt_tl) share the area-scope filter with production
+  // supervisor + union_rep — they each have an area_scope array on their
+  // persona definition. Union read-equity for ST areas is upheld via
+  // Rodriguez's scope extension (covers all 7 areas).
+  const AREA_SCOPED_ROLES = new Set([
+    'supervisor', 'union_rep', 'st_supervisor', 'skt_coordinator', 'skt_tl'
+  ]);
   if (persona.role === 'team_member' && persona.employee_id) {
     where.push('(employee_id = ? OR actor_user = ?)');
     params.push(persona.employee_id, persona.id);
-  } else if ((persona.role === 'supervisor' || persona.role === 'union_rep') && persona.area_scope?.length) {
+  } else if (AREA_SCOPED_ROLES.has(persona.role) && persona.area_scope?.length) {
     const placeholders = persona.area_scope.map(() => '?').join(',');
     where.push(`(area_id IN (${placeholders}) OR area_id IS NULL)`);
     params.push(...persona.area_scope);
