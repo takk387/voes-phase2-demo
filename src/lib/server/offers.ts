@@ -14,6 +14,7 @@ import {
   type FinalModeContext,
   type PostingForRotation
 } from './rotation.js';
+import { nextEligibleST, type STPosting } from './rotation_st.js';
 import {
   dequeueRemedyForPosting,
   linkRemedyOffer,
@@ -84,13 +85,21 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
         area_id: string;
         volunteers_needed: number;
         duration_hours: number;
+        pay_multiplier: number;
         status: string;
       }>(
-        `SELECT id, area_id, volunteers_needed, duration_hours, status
+        `SELECT id, area_id, volunteers_needed, duration_hours, pay_multiplier, status
            FROM posting WHERE id = ?`
       )
       .get(offer.posting_id);
     if (!posting) throw new Error('posting not found');
+
+    const areaTypeRow = conn
+      .prepare<[string], { type: string }>(
+        `SELECT type FROM area WHERE id = ?`
+      )
+      .get(posting.area_id);
+    const isST = areaTypeRow?.type === 'skilled_trades';
 
     const mode = currentMode(posting.area_id);
     const cycle = getCurrentCycle(posting.area_id);
@@ -130,8 +139,76 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
       reason: input.reason ?? null
     });
 
-    // 3. Apply charges per the area's mode.
-    if (mode === 'interim' && shouldChargeInterim(input.response_type)) {
+    // 3. Apply charges per the area's mode (or ST rules, which override
+    //    mode — ST is always hours-based with pay-multiplier weighting per
+    //    SKT-04A pages 215-216).
+    if (isST) {
+      if (shouldChargeInterim(input.response_type)) {
+        const weightedHours = posting.duration_hours * posting.pay_multiplier;
+        conn
+          .prepare(
+            `INSERT INTO charge
+               (offer_id, employee_id, area_id, charge_type, amount,
+                mode_at_charge, charge_multiplier)
+             VALUES (?, ?, ?, 'hours_offered', ?, 'final', ?)`
+          )
+          .run(
+            offer.id, offer.employee_id, posting.area_id,
+            weightedHours, posting.pay_multiplier
+          );
+        writeAudit({
+          actor_user: 'system',
+          actor_role: 'system',
+          action: 'charge_applied',
+          area_id: posting.area_id,
+          posting_id: posting.id,
+          offer_id: offer.id,
+          employee_id: offer.employee_id,
+          data: {
+            charge_type: 'hours_offered',
+            amount: weightedHours,
+            pay_multiplier: posting.pay_multiplier,
+            area_type: 'skilled_trades'
+          }
+        });
+
+        if (input.response_type === 'yes') {
+          conn
+            .prepare(
+              `INSERT INTO charge
+                 (offer_id, employee_id, area_id, charge_type, amount,
+                  mode_at_charge, charge_multiplier)
+               VALUES (?, ?, ?, 'hours_accepted', ?, 'final', ?)`
+            )
+            .run(
+              offer.id, offer.employee_id, posting.area_id,
+              weightedHours, posting.pay_multiplier
+            );
+          writeAudit({
+            actor_user: 'system',
+            actor_role: 'system',
+            action: 'charge_applied',
+            area_id: posting.area_id,
+            posting_id: posting.id,
+            offer_id: offer.id,
+            employee_id: offer.employee_id,
+            data: {
+              charge_type: 'hours_accepted',
+              amount: weightedHours,
+              pay_multiplier: posting.pay_multiplier,
+              area_type: 'skilled_trades'
+            }
+          });
+        }
+
+        // Mark cycle_offered so apprentice gating in rotation_st.ts sees
+        // this employee as offered in the current cycle. ST cycles don't
+        // auto-advance in the demo; once every journeyperson in an
+        // expertise group has been offered once, apprentices enter the
+        // pool naturally.
+        markCycleOffered(posting.area_id, cycle, offer.employee_id);
+      }
+    } else if (mode === 'interim' && shouldChargeInterim(input.response_type)) {
       conn
         .prepare(
           `INSERT INTO charge
@@ -364,13 +441,37 @@ export function generateNextOffer(
         id: string;
         area_id: string;
         work_date: string;
+        start_time: string;
+        duration_hours: number;
         status: string;
+        pay_multiplier: number;
+        required_classification: string | null;
+        required_expertise: string | null;
       }>(
-        `SELECT id, area_id, work_date, status FROM posting WHERE id = ?`
+        `SELECT id, area_id, work_date, start_time, duration_hours, status,
+                pay_multiplier, required_classification, required_expertise
+           FROM posting WHERE id = ?`
       )
       .get(posting_id);
     if (!posting) throw new Error('posting not found');
     if (posting.status !== 'open') return null;
+
+    // Dispatch by area.type. ST areas use a distinct rotation engine
+    // (rotation_st.ts) that handles expertise, classification, schedule
+    // eligibility, soft-qual preference, apprentice gating, and inter-shop
+    // canvass. Production areas keep the existing PS-036 path.
+    const areaTypeRow = conn
+      .prepare<[string], { type: string }>(
+        `SELECT type FROM area WHERE id = ?`
+      )
+      .get(posting.area_id);
+    if (areaTypeRow?.type === 'skilled_trades') {
+      return generateNextOfferST(
+        posting,
+        offered_by_user,
+        offered_by_role
+      );
+    }
 
     const quals = conn
       .prepare<[string], { qualification_id: string }>(
@@ -630,4 +731,116 @@ export function cancelPosting(
       reason
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Skilled-Trades dispatch arm of generateNextOffer.
+//
+// Runs inside the same transaction as the caller (we still call db() / writeAudit
+// while withTransaction is active). Returns the new offer's id + employee id,
+// or null if no candidate was found (in-area + inter-shop canvass both empty).
+// ---------------------------------------------------------------------------
+function generateNextOfferST(
+  posting: {
+    id: string;
+    area_id: string;
+    work_date: string;
+    start_time: string;
+    duration_hours: number;
+    pay_multiplier: number;
+    required_classification: string | null;
+    required_expertise: string | null;
+  },
+  offered_by_user: string,
+  offered_by_role: string
+): { offer_id: string; employee_id: string } | null {
+  const conn = db();
+
+  const hardQuals = conn
+    .prepare<[string], { qualification_id: string }>(
+      `SELECT qualification_id FROM posting_qualification WHERE posting_id = ?`
+    )
+    .all(posting.id)
+    .map((r) => r.qualification_id);
+  const softQuals = conn
+    .prepare<[string], { qualification_id: string }>(
+      `SELECT qualification_id FROM posting_preferred_qualification WHERE posting_id = ?`
+    )
+    .all(posting.id)
+    .map((r) => r.qualification_id);
+
+  const stPosting: STPosting = {
+    id: posting.id,
+    area_id: posting.area_id,
+    work_date: posting.work_date,
+    start_time: posting.start_time,
+    duration_hours: posting.duration_hours,
+    pay_multiplier: posting.pay_multiplier,
+    required_qualifications: hardQuals,
+    preferred_qualifications: softQuals,
+    required_classification: posting.required_classification,
+    required_expertise: posting.required_expertise
+  };
+
+  const result = nextEligibleST(stPosting);
+
+  // Record audit-only skips for transparency. We don't insert response rows
+  // for ST-specific skip reasons (shift_conflict / classification_mismatch /
+  // expertise_mismatch / apprentice_gated) because the response.response_type
+  // CHECK constraint doesn't list them and SQLite doesn't support modifying
+  // CHECK constraints in place. The audit log captures the full skip set.
+  for (const skip of result.skips) {
+    writeAudit({
+      actor_user: 'system',
+      actor_role: 'system',
+      action: 'st_candidate_skipped',
+      area_id: posting.area_id,
+      posting_id: posting.id,
+      employee_id: skip.employee_id,
+      data: { reason: skip.reason, charged: false }
+    });
+  }
+
+  if (!result.candidate) return null;
+
+  const c = result.candidate;
+  const offerId =
+    'ofr-' + posting.id.slice(5) + '-' + c.employee_id.split('-')[1] +
+    (result.phase === 'inter_shop_canvass' ? '-isc' : '-st');
+
+  conn
+    .prepare(
+      `INSERT INTO offer
+         (id, posting_id, employee_id, rotation_position, offered_by_user,
+          phase, status)
+       VALUES (?, ?, ?, 0, ?, ?, 'pending')`
+    )
+    .run(
+      offerId,
+      posting.id,
+      c.employee_id,
+      offered_by_user,
+      result.phase === 'inter_shop_canvass' ? 'inter_shop_canvass' : null
+    );
+
+  writeAudit({
+    actor_user: offered_by_user,
+    actor_role: offered_by_role,
+    action: 'offer_made',
+    area_id: posting.area_id,
+    posting_id: posting.id,
+    offer_id: offerId,
+    employee_id: c.employee_id,
+    data: {
+      area_type: 'skilled_trades',
+      phase: result.phase,
+      eligibility_at_offer: c.eligibility_at_offer,
+      source_area_id: c.source_area_id,
+      pay_multiplier: posting.pay_multiplier,
+      preferred_quals_matched: c.preferred_quals_matched,
+      is_apprentice: c.is_apprentice === 1
+    }
+  });
+
+  return { offer_id: offerId, employee_id: c.employee_id };
 }

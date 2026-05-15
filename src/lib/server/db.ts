@@ -92,6 +92,15 @@ export function runMigrations(conn: Database.Database) {
       ddl: 'pay_multiplier REAL NOT NULL DEFAULT 1.0 CHECK(pay_multiplier IN (1.0, 1.5, 2.0))' },
     { table: 'posting', column: 'required_classification',
       ddl: 'required_classification TEXT' },
+    // PLAN-DEVIATION (Step 3): Step 1 spec listed required_classification but
+    // not required_expertise. Rotation logic needs both — an ST posting can
+    // target "any Mechanical" without naming a specific classification, per
+    // the round-2 union meeting note "ST postings can target a classification
+    // specifically OR target the broader expertise group when classification
+    // is not material." Adding here so the rotation candidate filter has
+    // something to match against.
+    { table: 'posting', column: 'required_expertise',
+      ddl: `required_expertise TEXT CHECK(required_expertise IS NULL OR required_expertise IN ('Electrical','Mechanical'))` },
     { table: 'posting', column: 'pending_sv_approval',
       ddl: 'pending_sv_approval INTEGER NOT NULL DEFAULT 0' },
 

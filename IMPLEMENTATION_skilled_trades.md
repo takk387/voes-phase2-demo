@@ -421,16 +421,26 @@ Tests:
 ```
 
 **Done When:**
-- [ ] Rotation engine dispatches by `area.type`
-- [ ] ST charge multiplication applied
-- [ ] Apprentice gating works within expertise group
-- [ ] Soft quals are preference, never hard exclusion
-- [ ] `required_classification` filter works
-- [ ] Inter-shop canvass triggers when configured + pool exhausted
-- [ ] Schedule-eligibility check correctly filters shift_conflict
-- [ ] Production regression suite passes
-- [ ] All new ST tests pass
-- [ ] `npm run check` clean
+- [x] Rotation engine dispatches by `area.type`
+- [x] ST charge multiplication applied
+- [x] Apprentice gating works within expertise group
+- [x] Soft quals are preference, never hard exclusion
+- [x] `required_classification` filter works
+- [x] Inter-shop canvass triggers when configured + pool exhausted
+- [x] Schedule-eligibility check correctly filters shift_conflict
+- [x] Production regression suite passes
+- [x] All new ST tests pass
+- [x] `npm run check` clean
+
+**Completion notes (2026-05-15):**
+- New file [rotation_st.ts](phase2/src/lib/server/rotation_st.ts) — selection-only engine. Single entry point `nextEligibleST(posting, options)`. Filter pipeline: status → leave → hard quals → classification → expertise → apprentice gating → schedule eligibility. Sort: lowest `hours_offered` → most `preferred_quals_matched` → oldest hire → lowest last4 (matches production tiebreaker convention per Article V §_.3). Plan said "seniority descending (final tiebreak)" — interpreted as "most senior first" to match production behavior. Documented inline; if the union president wants newest-first instead, it's a one-line change.
+- Dispatch path: [offers.ts:generateNextOffer](phase2/src/lib/server/offers.ts) reads `area.type` and early-exits to a new helper `generateNextOfferST` when `'skilled_trades'`. Production path is untouched. The ST helper loads hard + soft quals, builds an `STPosting`, calls `nextEligibleST`, writes audit-only skip entries (one per skipped candidate with reason), then inserts a real pending offer with `phase = 'inter_shop_canvass'` when the canvass arm fired, else `phase = NULL`.
+- ST charges live in `recordResponse` ahead of the existing interim/final branches: detects `area.type='skilled_trades'`, computes `weightedHours = duration × pay_multiplier`, inserts `hours_offered` (always on yes/no) and `hours_accepted` (on yes only) with `charge_multiplier = pay_multiplier`. Always records `mode_at_charge='final'` for ST — interim does not apply to SKT-04A. Marks `cycle_offered` so apprentice gating sees this employee as offered in the current cycle.
+- Apprentice gating uses `cycle_offered` + `rotation_state.current_cycle`. Predicate: at least one journeyperson in the apprentice's own `area_of_expertise` within the source area has NOT been recorded as offered this cycle → apprentice stays gated. Cross-expertise verified by test: a Mechanical apprentice's gating is independent of whether all Electrical journeypersons have been offered.
+- Inter-shop canvass scope: same shift (the contract's equalization unit is shop × shift × expertise; canvass crosses shop, stays in shift). Test covers the cross-shift exclusion. Hours snapshot per candidate comes from their OWN source area, not the requesting area — keeps lowest-hours-first intent intact when comparing across shops.
+- **ST-specific skip reasons (`shift_conflict`, `classification_mismatch`, `expertise_mismatch`, `apprentice_gated`) are NOT inserted into `response` rows** — the existing `response.response_type` CHECK constraint doesn't list them, and SQLite doesn't support modifying CHECK constraints in place without a table rebuild. Audit log captures them instead via new action `st_candidate_skipped`. Production's `passed_over_unqualified` / `on_leave` insertion path is untouched.
+- **Plan deviation (flagged in [db.ts](phase2/src/lib/server/db.ts) inline):** added `posting.required_expertise TEXT CHECK(NULL or 'Electrical'|'Mechanical')`. Step 1 spec listed only `required_classification` but the rotation logic needs both — a posting can target "any Mechanical" without naming a specific classification per round-2 union meeting note. The classification gate takes precedence over the expertise gate; both can be set together (e.g., "PipeFitter" + "Mechanical").
+- Tests: 19 new tests in [rotation_st.test.ts](phase2/src/lib/server/rotation_st.test.ts) covering classification/expertise gating, schedule eligibility (D / N / RDO designations), apprentice gating (gated, ungated, cross-expertise), soft-qual preference (tied hours wins for cert-holder, non-holder still appears), inter-shop canvass (triggers when allowed + pool exhausted, off when not allowed, stays in shift), ST charges (1.5× and 2.0× multipliers on hours_offered + hours_accepted, cycle_offered marking), offer.phase tagging, and a production-regression case verifying interim opportunity charges remain unchanged for production areas. **Tests: 84/84 pass** (24 schema migration + 41 cycle math + 19 new). `npm run check` 0 errors / 0 warnings. `npm run build` clean. `npm run seed` baseline unchanged (4 areas / 44 employees / 69 charges / 8 shift patterns).
 
 ---
 
@@ -1026,7 +1036,7 @@ end-to-end and confirming every UI element actually exists.
 |------|-------------|--------|
 | 1 | Schema additions for area_type + ST fields + shift_pattern table + soft quals + classification | ✅ |
 | 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ✅ |
-| 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ⬜ |
+| 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ✅ |
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ⬜ |
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ⬜ |
 | 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ⬜ |
