@@ -665,16 +665,46 @@ Tests:
 ```
 
 **Done When:**
-- [ ] 3 ST areas seeded (total 7 areas)
-- [ ] 19 ST employees with correct fields including shift_pattern_id, crew_position, cycle_anchor_date
-- [ ] On DEMO_TODAY, every Battery persona's getDesignation matches the
+- [x] 3 ST areas seeded (total 7 areas)
+- [x] 19 ST employees with correct fields including shift_pattern_id, crew_position, cycle_anchor_date
+- [x] On DEMO_TODAY, every Battery persona's getDesignation matches the
       engineered narrative (D/N/RDO as called out)
-- [ ] Soft quals distributed; bootstrap multiplier-weighted charges in place
-- [ ] **14 new personas live** (8 TMs + coord + SKT TL + 3 ST SVs + 1 updated
+- [x] Soft quals distributed; bootstrap multiplier-weighted charges in place
+- [x] **14 new personas live** (8 TMs + coord + SKT TL + 3 ST SVs + 1 updated
       Union Rep scope) — Rodriguez scope-extended doesn't count as a new persona
-- [ ] PersonaSwitcher groups by role
-- [ ] Production SV scope unchanged; Union Rep scope extended to ST areas
-- [ ] Existing production behavior unchanged
+- [x] PersonaSwitcher groups by role
+- [x] Production SV scope unchanged; Union Rep scope extended to ST areas
+- [x] Existing production behavior unchanged
+
+**Completion notes (2026-05-15):**
+- 3 ST areas seeded in [seed.ts](phase2/src/lib/server/seed.ts): `area-body-st-1st` (Body Shop ST 1st, fixed_day, 8 employees), `area-paint-st-1st` (Paint Shop ST 1st, fixed_day, 5 employees), `area-battery-st-rot` (Battery Shop ST 4-crew rotating, 6 employees). All ST areas: `type='skilled_trades'`, `zero_out_month='01'`, `challenge_window_days=30`, `no_show_penalty_hours=1`, `notification_policy='in_app_only_no_home_except_emergency'`, `allow_inter_shop_canvass=1`, final mode from day 1.
+- 19 ST employees with classification (`Electrician` / `Millwright` / `ToolMaker` / `PipeFitter` for journeys, `ApprenticeElectrical` / `ApprenticeMechanical` for apprentices), `area_of_expertise`, `is_apprentice`, `shift_pattern_id`, `crew_position` (Battery only), `cycle_anchor_date='2026-05-11'` (most recent Monday before DEMO_TODAY).
+- Battery rotating engineering: single shared anchor + varying crew_position lands each persona on engineered designation via `calendar[crew_idx][3]`. Verified by test for all 6 Battery employees:
+  - Singh-E (Crew 1) → D, Mwangi-R (Crew 1) → D
+  - Iqbal-S (Crew 3) → N, Yoon-S (Crew 3) → N
+  - Larsen-W (Crew 2) → RDO, Mahmoud-K (Crew 4) → RDO
+- 6 new qualifications: 4 hard journey certs (`qual-electrician-cert`, `qual-millwright-cert`, `qual-toolmaker-cert`, `qual-pipefitter-cert`) and 2 new soft quals (`qual-high-lift`, `qual-confined-space`); `qual-welding` reused from production seed. Soft-qual distribution per plan: Collins-E + Singh-E hold welding, Bradley + Larsen-W hold high-lift, Park-R + Murphy-S hold confined-space.
+- Bootstrap charges multiplier-weighted via new `seedSTHoursBootstrap()` helper — one synthetic bootstrap posting per (area × multiplier) bucket, charge amounts = raw_hours × multiplier. Final hours per employee with apprentices strictly higher than every journey in same area + expertise:
+  - Body Electrical: Vasquez 8 < Collins-E 20 < **Okonkwo-J 24 (app)**
+  - Body Mechanical: Bradley 10 < Hassan-W 16 < Tang-T 18 < Park-R 20 < **Davies-R 32 (app)**
+  - Paint Electrical: Coleman 6 (sole journey, no Paint Electrical apprentice)
+  - Paint Mechanical: Patel-K 8 < Vincenzo 10 < Murphy-S 18 < **Stein-M 20 (app)**
+  - Battery Electrical: Singh-E 8 < Iqbal-S 14 < **Mahmoud-K 20 (app)**
+  - Battery Mechanical: Mwangi-R 10 < Larsen-W 20 < **Yoon-S 26 (app)**
+  - Vasquez (Body), Coleman (Paint), Singh-E + Mwangi-R (Battery) are each lowest-hours next-up in their area.
+  - Multiplier mix: 6 charges at 1.5× (Collins-E, Park-R, Murphy-S each have one offered + one accepted at 1.5×) and 2 charges at 2.0× (Larsen-W holiday). Easily satisfies the "≥ 2 charges at 1.5×" gate.
+- 13 new personas + 1 scope extension shipped in [personas.ts](phase2/src/lib/personas.ts):
+  - 3 new PersonaRole values: `st_supervisor`, `skt_coordinator`, `skt_tl`
+  - 8 TM personas: `tm-vasquez`, `tm-okonkwo-j`, `tm-bradley`, `tm-park` (→ `emp-park-r`), `tm-singh-e`, `tm-iqbal-st` (→ `emp-iqbal-s`), `tm-mwangi-r`, `tm-larsen-w`
+  - `coord-davis` (STAC Coordinator, scope = all 3 ST areas)
+  - `tl-rodriguez-st` (Skilled Trades TL, scope = Body ST 1st only)
+  - 3 dedicated ST SVs: `sv-body-1st-st`, `sv-paint-1st-st`, `sv-battery-rot-st`
+  - Union Rep Rodriguez scope extended from 4 production areas to all 7 areas
+- [PersonaSwitcher.svelte](phase2/src/lib/components/PersonaSwitcher.svelte) renders dropdown grouped by role with section headers in fixed order: TM → Production SV → ST SV → STAC Coordinator → Skilled Trades TL → Union Rep → Plant Mgmt → Admin. New ST roles get distinct chip colors (sky / indigo / slate).
+- Plan deviation flagged: persona id `tm-park` maps to employee id `emp-park-r` (not `emp-park`) to avoid namespace confusion with production's `emp-park-h` (Park, H. in Paint 2nd production). Likewise `tm-iqbal-st` → `emp-iqbal-s` (production has `emp-iqbal-r`). Persona names + employee display names disambiguate visually.
+- `wipe()` made defensive: wraps `DELETE FROM sqlite_sequence` in try/catch so fresh in-memory DBs (test setup) don't throw when sqlite_sequence hasn't been created yet (it's only auto-created on first AUTOINCREMENT insert, not at CREATE TABLE). Also added `posting_preferred_qualification` to the wipe table list so re-seeds don't leave orphan rows.
+- Production behavior unchanged: 4 production areas, 44 production employees, BA2 history posting + Paint/Battery bootstrap postings, 69 production charges, all unaffected. Verified by counts (`npm run seed` shows 7 areas / 63 employees / 138 charges = 69 prod + 69 ST).
+- **Tests: 138/138 pass** (24 + 5 schema migration, 41 cycle math, 19 Step-3 ST rotation, 17 Step-4 ST escalation/no-show, **32 new Step-5 seed tests**). New test file [seed_st.test.ts](phase2/src/lib/server/seed_st.test.ts) covers area + employee counts, qualification distribution, multiplier-weighted bootstrap charges, apprentice > journey hours rule, lowest-hours-next-up journey rule, every Battery persona's engineered DEMO_TODAY designation, fixed-day Mon-Fri = D / Sat-Sun = RDO, persona scope rules (production SVs see NO ST areas, Rodriguez sees all 7, ST SVs scoped to single ST area each, Davis covers all 3, TL Rodriguez-ST scoped to Body only), and "every TM persona references an existing employee row." `npm run check` 0 errors / 0 warnings on 401 files. `npm run build` clean. `npm run seed` produces 7 areas / 63 employees / 14 qualifications / 138 charges baseline.
 
 ---
 
@@ -1050,7 +1080,7 @@ end-to-end and confirming every UI element actually exists.
 | 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ✅ |
 | 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ✅ |
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ✅ |
-| 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ⬜ |
+| 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ✅ |
 | 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ⬜ |
 | 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ⬜ |
 | 8 | WALKTHROUGH_ST.md + production cross-reference | ⬜ |
