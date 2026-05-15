@@ -10,6 +10,7 @@
     "start": "node build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "seed": "tsx src/lib/server/seed.ts",
+    "preview-patterns": "tsx scripts/preview_patterns.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

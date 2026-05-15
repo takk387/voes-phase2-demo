@@ -142,7 +142,7 @@ Write tests in phase2/src/lib/server/schema_migration.test.ts:
 - [x] Existing production seed runs cleanly (4 areas, 44 employees, 69 charges)
 - [x] New columns have correct defaults verified via PRAGMA
 - [x] `npm run check` clean, `npm run build` clean
-- [ ] Reset demo on deployed Railway confirms production behavior unchanged *(manual — push and click Reset Demo)*
+- [x] Reset demo on deployed Railway confirms production behavior unchanged *(verified 2026-05-14: deploy 140fe47b booted cleanly on existing volume; POST /demo/reset returned 303; subsequent GET /tm 200; zero 5xx in http logs)*
 
 **Completion notes (2026-05-14):**
 - Tests: 24/24 pass in `phase2/src/lib/server/schema_migration.test.ts` (idempotency × 2, new tables, area/employee/posting/charge columns with default + CHECK verification, production seed compatibility, ST-shape inserts).
@@ -330,16 +330,32 @@ too — same data, different render.)
 ```
 
 **Done When:**
-- [ ] `demo_clock.ts` with DEMO_TODAY constant + helper shipped
-- [ ] `shift_pattern` table populated with 8 patterns (or all that apply
+- [x] `demo_clock.ts` with DEMO_TODAY constant + helper shipped
+- [x] `shift_pattern` table populated with 8 patterns (or all that apply
       to the demo seed) verified against contract page images
-- [ ] `schedule_eligibility.ts` with `getDesignation` + `isOnDutyDateScheduled`
-- [ ] Pattern transcriptions visually verified via preview_patterns.ts
+- [x] `schedule_eligibility.ts` with `getDesignation` + `isOnDutyDateScheduled`
+- [x] Pattern transcriptions visually verified via preview_patterns.ts
       script against `cba_pages/page_215.png` through `page_217.png`
-- [ ] All cycle-math tests pass (positive/negative dayDelta, modulo edges,
+- [x] All cycle-math tests pass (positive/negative dayDelta, modulo edges,
       multi-crew indexing)
-- [ ] Production fallback works — no production behavior regresses
-- [ ] `npm run check` clean
+- [x] Production fallback works — no production behavior regresses
+- [x] `npm run check` clean
+
+**Completion notes (2026-05-15):**
+- Pattern transcription verified by opening the PDF in Chrome via local HTTP server (claude-in-chrome MCP) and zooming into each 28-day and 14-day grid cell-by-cell. Color highlighting on page 216 disambiguated which crew is which (Crew 1=blue, Crew 2=red, Crew 3=gray, Crew 4=no highlight). `npm run preview-patterns` renders every pattern as an ASCII grid for ongoing side-by-side validation.
+- **Plan deviations against the Step 2 stubs:**
+  - `1_crew_weekend`: plan stubbed 7-day, contract is **14-day** ("Working Every Other Monday 80 Hours" — Week 1 = Mon + Fri-Sun, Week 2 = Fri-Sun only).
+  - `2_crew_fixed_d_n`: plan stubbed Crew 2 as `N N N N N RDO RDO`. Contract shows Crew 2 with **offset Sun N** — `N N N N RDO RDO N` — reflecting the convention that night-shift work weeks start Sunday evening.
+  - `4_crew_12h_rotating` **Crew 4 is asymmetric** per contract — 4 D + 10 N over 28 days vs other crews' 7 D + 7 N. Total hours match (42 h/wk avg) but Crew 4 is a "predominantly nights" crew with one D-shift block in Week 4. Comment in `shift_patterns.ts` explains; the preview script's per-crew totals make this visually obvious.
+  - `2_crew_fixed_d_afternoon` retains plan stub (matches contract exactly).
+- Files shipped:
+  - [demo_clock.ts](phase2/src/lib/server/demo_clock.ts) — DEMO_TODAY = '2026-05-14' + `demoToday()` helper
+  - [schedule_eligibility.ts](phase2/src/lib/server/schedule_eligibility.ts) — `getDesignation()`, `isOnDutyDateScheduled()`, pattern cache with test-reset hook, slot-classification heuristic (D = 05-13, A = 13-22, N = otherwise)
+  - [shift_patterns.ts](phase2/src/lib/server/shift_patterns.ts) — 8 pattern definitions + `seedShiftPatterns()` idempotent inserter with calendar-length sanity check
+  - [scripts/preview_patterns.ts](phase2/scripts/preview_patterns.ts) + `npm run preview-patterns` script
+  - [schedule_eligibility.test.ts](phase2/src/lib/server/schedule_eligibility.test.ts) — 41 tests covering production fallback, single-crew patterns, multi-crew indexing, negative dayDelta (history reconstruction), far-future dayDelta, every 4-crew rotating pattern crew × week spot check, fixed-pattern pair structure, RDO-volunteer eligibility, shift conflict cases
+- Wiring: seed runner calls `seedShiftPatterns(db())` inside the seed transaction, idempotent on `name UNIQUE`. Pattern cache resets between seeds via the `_resetPatternCacheForTests` test hook.
+- **Tests: 65/65 pass** (24 schema migration + 41 cycle math). `npm run check` 0 errors / 0 warnings. `npm run build` clean. `npm run seed` produces the unchanged 4 areas / 44 employees / 69 charges baseline plus 8 shift_pattern rows.
 
 ---
 
@@ -1009,7 +1025,7 @@ end-to-end and confirming every UI element actually exists.
 | Step | Description | Status |
 |------|-------------|--------|
 | 1 | Schema additions for area_type + ST fields + shift_pattern table + soft quals + classification | ✅ |
-| 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ⬜ |
+| 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ✅ |
 | 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ⬜ |
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ⬜ |
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ⬜ |

@@ -21,6 +21,8 @@
 import { db, withTransaction } from './db.js';
 import { writeAudit } from './audit.js';
 import { randomUUID } from 'node:crypto';
+import { seedShiftPatterns } from './shift_patterns.js';
+import { _resetPatternCacheForTests } from './schedule_eligibility.js';
 
 // ============================================================================
 // Type
@@ -500,6 +502,11 @@ export function runSeed(): Record<string, number> {
   // Seeding runs in a single transaction for atomicity, with FKs back on.
   withTransaction(() => {
     seedQualifications();
+    // SKT-04A shift patterns. Idempotent — re-running is a no-op for any
+    // pattern already in the table. Production-only fresh DBs still get
+    // them inserted so Step 5's ST personas can reference them by id.
+    seedShiftPatterns(db());
+    _resetPatternCacheForTests();
     for (const area of AREAS) seedArea(area);
     seedBA2History();
     seedFinalHoursBootstrap({
@@ -523,7 +530,7 @@ export function runSeed(): Record<string, number> {
   const tables = [
     'area', 'employee', 'area_membership', 'qualification',
     'employee_qualification', 'posting', 'offer', 'response',
-    'charge', 'audit_log'
+    'charge', 'audit_log', 'shift_pattern'
   ];
   for (const t of tables) {
     counts[t] = (conn.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
