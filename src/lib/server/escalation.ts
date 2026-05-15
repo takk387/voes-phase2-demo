@@ -100,6 +100,21 @@ export function initiateEscalation(
     if (!posting) throw new Error('posting not found');
     if (posting.status !== 'open') throw new Error('posting is not open');
 
+    // Step 4 defensive guard: production-style escalation (ask-high → force-
+    // low for critical, cascade for non-essential) is not available for ST
+    // areas. Per SKT-04A interpretation, ST has its own ask-apprentices
+    // escalation that runs automatically inside generateNextOffer; forcing
+    // for ST is an untested interpretation and would be fought via the
+    // Grievance Procedure. Block the path here so a misrouted call from the
+    // production SV UI cannot accidentally create force_low offers in an ST
+    // area. Compliance check 10 (Step 7) is the audit-time safety net.
+    const areaTypeRow = conn
+      .prepare<[string], { type: string }>(`SELECT type FROM area WHERE id = ?`)
+      .get(posting.area_id);
+    if (areaTypeRow?.type === 'skilled_trades') {
+      throw new Error('production escalation is not available for ST areas — use ask-apprentices via generateNextOffer');
+    }
+
     const yes = yesCount(posting_id);
     if (yes >= posting.volunteers_needed) {
       throw new Error('posting already satisfied');

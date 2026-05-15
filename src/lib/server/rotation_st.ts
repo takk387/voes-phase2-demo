@@ -67,7 +67,11 @@ export interface STCandidate {
 
 export interface NextEligibleSTResult {
   candidate: STCandidate | null;
-  phase: 'normal' | 'inter_shop_canvass' | null;
+  // 'apprentice_escalation' tag is applied by the offers.ts dispatcher
+  // (not by this engine) when the in-area + inter-shop pools both empty
+  // out and a second pass with apprentices unlocked produces a candidate.
+  // See Step 4 of the integration plan for the escalation flow.
+  phase: 'normal' | 'inter_shop_canvass' | 'apprentice_escalation' | null;
   // Skips encountered during candidate enumeration. Mirrors rotation.ts —
   // qualification or leave skips don't get charged but show up in the audit
   // trail so the supervisor can see why a TM was passed over.
@@ -158,6 +162,23 @@ function activeMembersForInterShopCanvass(
           AND (m.effective_end_date IS NULL OR m.effective_end_date > ?)`
     )
     .all(source_area_id, sourceArea.shift, work_date, work_date);
+}
+
+// Employees who already have a non-pending response on the given posting
+// shouldn't be re-offered on the same posting — that would create duplicate
+// offers when volunteers_needed > 1 and the same worker is still lowest-hours
+// after saying yes once. Production interim mode handles this via
+// cycle_offered; ST's final-mode-style selection needs an explicit filter.
+function alreadyRespondedOnPosting(posting_id: string): Set<string> {
+  const rows = db()
+    .prepare<[string], { employee_id: string }>(
+      `SELECT DISTINCT o.employee_id
+         FROM offer o
+         JOIN response r ON r.offer_id = o.id
+        WHERE o.posting_id = ?`
+    )
+    .all(posting_id);
+  return new Set(rows.map((r) => r.employee_id));
 }
 
 function hoursOfferedByEmployee(area_id: string): Map<string, number> {
@@ -386,9 +407,11 @@ export function nextEligibleST(
 ): NextEligibleSTResult {
   const skips: NextEligibleSTResult['skips'] = [];
   const unlockApprentices = options.unlockApprentices === true;
+  const alreadyResponded = alreadyRespondedOnPosting(posting.id);
 
   // ---- In-area pool ---------------------------------------------------------
-  const inAreaRows = activeMembersForArea(posting.area_id, posting.work_date);
+  const inAreaRows = activeMembersForArea(posting.area_id, posting.work_date)
+    .filter((r) => !alreadyResponded.has(r.employee_id));
   const inAreaFiltered = filterCandidates(inAreaRows, posting, unlockApprentices, skips);
 
   if (inAreaFiltered.length > 0) {
@@ -410,7 +433,8 @@ export function nextEligibleST(
     return { candidate: null, phase: null, skips };
   }
 
-  const otherRows = activeMembersForInterShopCanvass(posting.area_id, posting.work_date);
+  const otherRows = activeMembersForInterShopCanvass(posting.area_id, posting.work_date)
+    .filter((r) => !alreadyResponded.has(r.employee_id));
   // Skips encountered while traversing other shops are useful for the audit
   // trail too, but we don't conflate them with in-area skips — they go into
   // the same array so the caller can render them under the canvass section.

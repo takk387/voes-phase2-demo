@@ -432,3 +432,157 @@ describe('schema migration — Skilled Trades integration (Step 1)', () => {
     });
   });
 });
+
+// ============================================================================
+// Step 4 upgrade-path regression
+//
+// Simulates an on-disk DB that pre-dates Step 4 (offer.status CHECK without
+// 'released', response.response_type CHECK without 'no_show') with FK chains
+// already in place. Runs runMigrations and asserts:
+//   - The CHECK constraints get updated
+//   - Pre-existing data survives
+//   - The FKs in response → offer still resolve (i.e. no orphaned references
+//     from the "new-name" rebuild swap)
+// ============================================================================
+
+describe('Step 4 upgrade path — pre-Step-4 DB shape rebuilds cleanly', () => {
+  let conn: Database.Database;
+
+  beforeEach(() => {
+    conn = new Database(':memory:');
+    conn.pragma('foreign_keys = ON');
+    // Hand-roll the pre-Step-4 schema for the affected tables, with the
+    // same FK structure the real Railway DB has.
+    conn.exec(`
+      CREATE TABLE posting (id TEXT PRIMARY KEY);
+      CREATE TABLE employee (id TEXT PRIMARY KEY);
+      CREATE TABLE offer (
+        id TEXT PRIMARY KEY,
+        posting_id TEXT NOT NULL REFERENCES posting(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        rotation_position INTEGER,
+        offered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        offered_by_user TEXT NOT NULL,
+        phase TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending','responded','expired','superseded'))
+      );
+      CREATE TABLE response (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        response_type TEXT NOT NULL CHECK(response_type IN (
+          'yes','no','passed_over_unqualified','on_leave',
+          'on_the_job','no_contact','supervisor_override'
+        )),
+        recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        recorded_by_user TEXT NOT NULL,
+        recorded_via TEXT NOT NULL DEFAULT 'team_member'
+          CHECK(recorded_via IN ('team_member','supervisor_on_behalf','manual_entry')),
+        reason TEXT,
+        supersedes_response_id INTEGER REFERENCES response(id)
+      );
+      -- Sibling tables that runMigrations expects to exist for the ADD COLUMN
+      -- loop. Keep them minimal — just the columns needed so the migration
+      -- detects missing columns and adds them.
+      CREATE TABLE area (id TEXT PRIMARY KEY, name TEXT, shop TEXT, line TEXT, shift TEXT);
+      CREATE TABLE charge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        area_id TEXT NOT NULL REFERENCES area(id),
+        charge_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        mode_at_charge TEXT NOT NULL,
+        recorded_at TEXT,
+        reverses_charge_id INTEGER REFERENCES charge(id),
+        cycle_number INTEGER
+      );
+      CREATE TABLE shift_pattern (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        cycle_length_days INTEGER NOT NULL,
+        crew_count INTEGER NOT NULL,
+        calendar_json TEXT NOT NULL,
+        description TEXT
+      );
+    `);
+    // Seed a posting → offer → response chain that the migration must
+    // preserve through the rebuild.
+    conn.prepare(`INSERT INTO posting VALUES ('pst-up')`).run();
+    conn.prepare(`INSERT INTO employee VALUES ('emp-up')`).run();
+    conn
+      .prepare(
+        `INSERT INTO offer (id, posting_id, employee_id, offered_by_user, status)
+         VALUES ('ofr-up', 'pst-up', 'emp-up', 'seed', 'responded')`
+      )
+      .run();
+    conn
+      .prepare(
+        `INSERT INTO response (offer_id, response_type, recorded_by_user)
+         VALUES ('ofr-up', 'yes', 'seed')`
+      )
+      .run();
+  });
+
+  it('rebuilds offer with status=released allowed; pre-existing offer survives', () => {
+    runMigrations(conn);
+    expect(
+      conn.prepare(`SELECT COUNT(*) AS c FROM offer WHERE id = 'ofr-up'`).get()
+    ).toEqual({ c: 1 });
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO offer (id, posting_id, employee_id, offered_by_user, status)
+           VALUES ('ofr-rel', 'pst-up', 'emp-up', 'seed', 'released')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+
+  it('rebuilds response with response_type=no_show allowed; pre-existing response survives', () => {
+    runMigrations(conn);
+    expect(
+      conn.prepare(`SELECT COUNT(*) AS c FROM response WHERE offer_id = 'ofr-up'`).get()
+    ).toEqual({ c: 1 });
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO response (offer_id, response_type, recorded_by_user)
+           VALUES ('ofr-up', 'no_show', 'seed')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+
+  it('FK chain stays intact across rebuild — response.offer_id still references offer', () => {
+    runMigrations(conn);
+    // Inserting a response that points at a missing offer must fail with
+    // a FK violation. If the rebuild had broken the FK (e.g. by pointing
+    // it at a renamed temp table), this would silently succeed.
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO response (offer_id, response_type, recorded_by_user)
+           VALUES ('ofr-nonexistent', 'yes', 'seed')`
+        )
+        .run()
+    ).toThrow(/FOREIGN KEY/);
+  });
+
+  it('eligibility_at_offer column added by ADD COLUMN, populated NULL on pre-existing rows', () => {
+    runMigrations(conn);
+    const row = conn
+      .prepare(`SELECT eligibility_at_offer FROM offer WHERE id = 'ofr-up'`)
+      .get() as { eligibility_at_offer: string | null };
+    expect(row.eligibility_at_offer).toBeNull();
+  });
+
+  it('running migrations twice on a pre-Step-4 DB is idempotent', () => {
+    runMigrations(conn);
+    runMigrations(conn); // should be a no-op the second time
+    const offerCount = conn.prepare(`SELECT COUNT(*) AS c FROM offer`).get();
+    const responseCount = conn.prepare(`SELECT COUNT(*) AS c FROM response`).get();
+    expect(offerCount).toEqual({ c: 1 });
+    expect(responseCount).toEqual({ c: 1 });
+  });
+});

@@ -206,7 +206,7 @@ export const actions: Actions = {
     const response = String(form.get('response') ?? '') as ResponseType;
     const reason = String(form.get('reason') ?? '');
     const valid: ResponseType[] = [
-      'yes', 'no', 'on_the_job', 'on_leave', 'no_contact', 'passed_over_unqualified'
+      'yes', 'no', 'no_show', 'on_the_job', 'on_leave', 'no_contact', 'passed_over_unqualified'
     ];
     if (!valid.includes(response)) return fail(400, { error: 'Invalid response' });
 

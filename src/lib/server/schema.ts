@@ -179,7 +179,12 @@ CREATE TABLE IF NOT EXISTS offer (
   offered_by_user    TEXT NOT NULL,
   phase              TEXT,
   status             TEXT NOT NULL DEFAULT 'pending'
-                     CHECK(status IN ('pending','responded','expired','superseded'))
+                     CHECK(status IN ('pending','responded','expired','superseded','released')),
+  -- SKT-04A no-show penalty (Step 4): captured at offer creation so the
+  -- no-show charge logic can know whether the candidate was on RDO vs on
+  -- a normal shift without recomputing cycle math. Production offers leave
+  -- NULL.
+  eligibility_at_offer TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_offer_posting ON offer(posting_id);
@@ -188,7 +193,7 @@ CREATE TABLE IF NOT EXISTS response (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   offer_id        TEXT NOT NULL REFERENCES offer(id),
   response_type   TEXT NOT NULL CHECK(response_type IN (
-                    'yes','no','passed_over_unqualified','on_leave',
+                    'yes','no','no_show','passed_over_unqualified','on_leave',
                     'on_the_job','no_contact','supervisor_override'
                   )),
   recorded_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

@@ -501,15 +501,26 @@ Tests:
 ```
 
 **Done When:**
-- [ ] `no_show` response type recognized
-- [ ] `eligibility_at_offer` field on offer table populated at creation
-- [ ] +1 penalty applies only for ST + (on_rdo_volunteer OR weekend/holiday) + no_show
-- [ ] Release-excess endpoint shipped (UI in Step 6)
-- [ ] ST escalation = ask-apprentices, implemented
-- [ ] **No code path creates a force_low offer for ST areas (verified by test)**
-- [ ] Production escalation regression suite passes
-- [ ] All ST escalation tests pass
-- [ ] `npm run check` clean
+- [x] `no_show` response type recognized
+- [x] `eligibility_at_offer` field on offer table populated at creation
+- [x] +1 penalty applies only for ST + (on_rdo_volunteer OR weekend/holiday) + no_show
+- [x] Release-excess endpoint shipped (UI in Step 6)
+- [x] ST escalation = ask-apprentices, implemented
+- [x] **No code path creates a force_low offer for ST areas (verified by test)**
+- [x] Production escalation regression suite passes
+- [x] All ST escalation tests pass
+- [x] `npm run check` clean
+
+**Completion notes (2026-05-15):**
+- Schema (Step 4 additions): `offer.eligibility_at_offer TEXT` added via idempotent ADD COLUMN; `response.response_type` CHECK extended to include `'no_show'`; `offer.status` CHECK extended to include `'released'`. The two CHECK changes go through table rebuilds (SQLite doesn't support modifying CHECK in place). Rebuild uses the docs-recommended "new-name" pattern — `CREATE TABLE response_new` → `INSERT SELECT` → `DROP TABLE response` → `ALTER TABLE response_new RENAME TO response` — to avoid the gotcha where `ALTER TABLE RENAME` auto-updates foreign keys in other tables and breaks FK chains. (Hit this the hard way: an earlier rename-first approach left `response.offer_id` pointing at a temp table that was then dropped, and the next seed broke with "no such table: main.offer_pre_released".)
+- Apprentice escalation: `generateNextOfferST` makes a first pass with `nextEligibleST(stPosting)` (apprentices gated). If empty, it retries with `{ unlockApprentices: true }` and tags the offer `phase = 'apprentice_escalation'`. If the second pass is also empty, the function writes an `st_pool_exhausted` audit entry, returns null, and the posting stays open. **No force-low fallback** — Step 7's compliance check 10 (planned) will catch any regression at audit time; Step 4 ships two safeguards already: (a) `initiateEscalation` guards against ST areas and throws; (b) a test sweep asserts zero `offer.phase='force_low'` rows in any ST area.
+- No-show penalty: `recordResponse` for ST areas detects `response_type='no_show'`, looks up `offer.eligibility_at_offer` and `posting.ot_type`, and applies penalty logic when `eligibility_at_offer='on_rdo_volunteer'` OR `ot_type IN ('voluntary_weekend','voluntary_holiday')`. Penalty path: charges `hours_offered` + `hours_accepted` (as if worked) at the multiplier-weighted rate, plus an extra flat `hours_offered` charge of `area.no_show_penalty_hours` with `charge_multiplier=1.0`. Non-qualifying ST no-show (on_normal_shift + voluntary_daily) gets only `hours_offered`, no penalty. Production no-show is treated like a `no` — opportunity charge in interim mode, hours_offered in final mode, no penalty.
+- Reverse-selection ("go home"): new module [release_st.ts](phase2/src/lib/server/release_st.ts) exports `releaseExcessST(posting_id, count, by_user, by_role)`. Picks the `count` highest-hours-offered workers among `offer.status='responded' + response='yes'`, flips their offer to `status='released'`, inserts reversal charges for `hours_accepted` and `hours_worked` (hours_offered intentionally stays — they were still offered the slot). Writes `st_worker_released` audit per release. Endpoint at [+server.ts](phase2/src/routes/coord/posting/[id]/release-excess/+server.ts) accepts `count` via FormData; allows `skt_coordinator`, `skt_tl`, `admin`; returns 400 for production areas + 404 for missing postings.
+- **Bug fix found during testing:** ST rotation could re-offer the same employee on the same posting when `volunteers_needed > 1` and the same worker remained lowest-hours after their first yes. Added `alreadyRespondedOnPosting()` filter in `rotation_st.ts` so the candidate pool excludes anyone with a non-pending response on this posting. Production interim mode handles this via `cycle_offered`; ST's final-mode-style selection needed an explicit filter. (Production final mode has the same latent issue but it's out of scope here — flagged below.)
+- **ST offer.id uniqueness fix:** the deterministic offer ID format (`ofr-{posting}-{employee}-st`) collided when the same employee got multiple offers on a multi-volunteer posting. Added a 6-char `randomUUID()` suffix to ST offer IDs. Production offer IDs unchanged (they rely on the cycle suffix for uniqueness, which still works).
+- Wider SV UI: the production supervisor's `/sv/posting/[id]?/respond` action now accepts `no_show` as a valid response type (it was previously rejected at the form action layer even though the schema would have allowed it post-migration).
+- Tests: **5 new tests in [schema_migration.test.ts](phase2/src/lib/server/schema_migration.test.ts)** covering the pre-Step-4 → Step 4 upgrade path (rebuild preserves data, FK chain stays intact, eligibility_at_offer added, idempotent re-run). **17 new tests in [rotation_st_step4.test.ts](phase2/src/lib/server/rotation_st_step4.test.ts)** covering no-show penalty (RDO-volunteer / weekend / holiday / daily-on-shift / production regression), apprentice escalation (journey-exhaust → apprentice with `phase='apprentice_escalation'` / both pools exhaust → null / `initiateEscalation` blocked for ST / force-low sweep), release-excess (picks highest-hours / multi-release / hours_accepted nets to zero / hours_offered stays / production rejected / count exceeds assigned / audit per release), and a production escalation regression confirming `initiateEscalation` still works on production postings. **Tests: 106/106 pass** (24 + 5 schema migration, 41 cycle math, 19 Step-3 ST rotation, 17 Step-4). `npm run check` 0 errors / 0 warnings. `npm run build` clean. `npm run seed` produces 4 areas / 44 employees / 69 charges baseline.
+- Smoke test against deployed app shape: all 10 production routes return 200; release-excess endpoint returns 404 on missing posting, 400 on production area, 403 for non-allowed personas. Production no-show end-to-end via /sv/posting form action records the response with type='no_show', writes an opportunity charge (no penalty), and auto-generates the next offer.
 
 ---
 
@@ -1029,6 +1040,7 @@ end-to-end and confirming every UI element actually exists.
 | Graduated-apprentice "Highest plus 1 hour" placement automation | Phase 3 reference impl | Phase 2 seeds this manually; needs an event-triggered helper in production |
 | Rejection-revision workflow (originator revises a rejected ST posting in place) | Phase 3 polish | Demo treats rejection as terminal |
 | HRIS-fed schedule data replacing DEMO_TODAY + manual anchor dates | Phase 3 reference impl | Demo uses DEMO_TODAY constant; production swaps in HRIS-fed schedule data behind the same helper |
+| Production final-mode re-offer prevention | Phase 3 polish | Step 4 added `alreadyRespondedOnPosting()` filter for ST; production `nextEligibleFinal` has the same latent issue (could re-offer same employee on multi-volunteer postings) but volunteers_needed=1 is the common case so it hasn't surfaced. Apply the same filter when polishing |
 
 ## Progress Tracker
 
@@ -1037,7 +1049,7 @@ end-to-end and confirming every UI element actually exists.
 | 1 | Schema additions for area_type + ST fields + shift_pattern table + soft quals + classification | ✅ |
 | 2 | Shift pattern definitions + DEMO_TODAY constant + cycle math helper (highest detail risk — verify against contract page images) | ✅ |
 | 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ✅ |
-| 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ⬜ |
+| 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ✅ |
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ⬜ |
 | 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ⬜ |
 | 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ⬜ |

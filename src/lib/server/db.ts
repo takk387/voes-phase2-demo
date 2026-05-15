@@ -106,13 +106,124 @@ export function runMigrations(conn: Database.Database) {
 
     // --- Skilled Trades integration: charge columns ---
     { table: 'charge', column: 'charge_multiplier',
-      ddl: 'charge_multiplier REAL NOT NULL DEFAULT 1.0' }
+      ddl: 'charge_multiplier REAL NOT NULL DEFAULT 1.0' },
+
+    // --- Skilled Trades integration: offer.eligibility_at_offer (Step 4) ---
+    // Captured at offer creation so the SKT-04A no-show penalty logic can
+    // tell whether the worker was on RDO (eligible to volunteer for weekend/
+    // holiday OT) vs on their normal shift. Production offers leave NULL.
+    { table: 'offer', column: 'eligibility_at_offer',
+      ddl: 'eligibility_at_offer TEXT' }
   ];
   for (const m of adds) {
     const cols = conn.prepare(`PRAGMA table_info(${m.table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === m.column)) {
       conn.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.ddl}`);
     }
+  }
+
+  // --- Step 4: CHECK constraint rebuilds ---
+  // SQLite does not support ALTER TABLE for CHECK constraints in place, so
+  // we rebuild the affected tables when the existing CHECK doesn't already
+  // include the new value. Detection: read sqlite_master.sql for the
+  // table and look for the new value as a substring. Fresh DBs come up
+  // from schemaSql (which already has both values) and skip the rebuild.
+  rebuildResponseTableIfNeeded(conn);
+  rebuildOfferTableIfNeeded(conn);
+}
+
+// SQLite table-rebuild for CHECK constraint changes follows the docs'
+// recommended "new-name" pattern:
+//   1. CREATE the new table with a temporary name
+//   2. Copy data from old to new
+//   3. DROP the old table
+//   4. RENAME new to the original name
+// This avoids the trap where ALTER TABLE RENAME auto-updates foreign keys
+// in *other* tables to point at the temp name (legacy_alter_table=OFF since
+// SQLite 3.25, which better-sqlite3 inherits). With this pattern, FKs in
+// response/charge/bypass_remedy keep referencing 'offer' through the swap.
+
+function rebuildResponseTableIfNeeded(conn: Database.Database) {
+  const row = conn
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='response'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'no_show'")) return;
+
+  conn.pragma('foreign_keys = OFF');
+  try {
+    conn.exec(`
+      CREATE TABLE response_new (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id        TEXT NOT NULL REFERENCES offer(id),
+        response_type   TEXT NOT NULL CHECK(response_type IN (
+                          'yes','no','no_show','passed_over_unqualified','on_leave',
+                          'on_the_job','no_contact','supervisor_override'
+                        )),
+        recorded_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        recorded_by_user TEXT NOT NULL,
+        recorded_via    TEXT NOT NULL DEFAULT 'team_member'
+                        CHECK(recorded_via IN ('team_member','supervisor_on_behalf','manual_entry')),
+        reason          TEXT,
+        supersedes_response_id INTEGER REFERENCES response(id)
+      )
+    `);
+    conn.exec(`
+      INSERT INTO response_new
+        (id, offer_id, response_type, recorded_at, recorded_by_user,
+         recorded_via, reason, supersedes_response_id)
+      SELECT id, offer_id, response_type, recorded_at, recorded_by_user,
+             recorded_via, reason, supersedes_response_id
+        FROM response
+    `);
+    conn.exec(`DROP TABLE response`);
+    conn.exec(`ALTER TABLE response_new RENAME TO response`);
+    conn.exec(`CREATE INDEX IF NOT EXISTS idx_response_offer ON response(offer_id)`);
+  } finally {
+    conn.pragma('foreign_keys = ON');
+  }
+}
+
+function rebuildOfferTableIfNeeded(conn: Database.Database) {
+  const row = conn
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='offer'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'released'")) return;
+
+  conn.pragma('foreign_keys = OFF');
+  try {
+    conn.exec(`
+      CREATE TABLE offer_new (
+        id                 TEXT PRIMARY KEY,
+        posting_id         TEXT NOT NULL REFERENCES posting(id),
+        employee_id        TEXT NOT NULL REFERENCES employee(id),
+        rotation_position  INTEGER,
+        offered_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        offered_by_user    TEXT NOT NULL,
+        phase              TEXT,
+        status             TEXT NOT NULL DEFAULT 'pending'
+                           CHECK(status IN ('pending','responded','expired','superseded','released')),
+        eligibility_at_offer TEXT
+      )
+    `);
+    // Preserve every column the existing offer table actually has. The ADD
+    // COLUMN migration above would already have added eligibility_at_offer,
+    // but the shared-columns intersection keeps the migration robust against
+    // older DBs that pre-date that column too.
+    const oldCols = conn
+      .prepare(`PRAGMA table_info(offer)`)
+      .all() as { name: string }[];
+    const colNames = oldCols.map((c) => c.name);
+    const sharedCols = [
+      'id', 'posting_id', 'employee_id', 'rotation_position', 'offered_at',
+      'offered_by_user', 'phase', 'status', 'eligibility_at_offer'
+    ].filter((c) => colNames.includes(c));
+    const colList = sharedCols.join(', ');
+    conn.exec(`INSERT INTO offer_new (${colList}) SELECT ${colList} FROM offer`);
+    conn.exec(`DROP TABLE offer`);
+    conn.exec(`ALTER TABLE offer_new RENAME TO offer`);
+    conn.exec(`CREATE INDEX IF NOT EXISTS idx_offer_posting ON offer(posting_id)`);
+  } finally {
+    conn.pragma('foreign_keys = ON');
   }
 }
 

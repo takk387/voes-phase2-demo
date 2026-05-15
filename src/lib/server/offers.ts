@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 export type ResponseType =
   | 'yes'
   | 'no'
+  | 'no_show'
   | 'passed_over_unqualified'
   | 'on_leave'
   | 'on_the_job'
@@ -36,11 +37,16 @@ export type ResponseType =
  * Per Phase 1 plan §4.5 + §4.6, a Yes or No produces a charge; qualification,
  * leave, and on-the-job skips do not. A no-contact response also does NOT
  * produce a charge — treat it like approved leave for rotation purposes.
+ *
+ * Step 4: `no_show` is treated as `no` for production charge purposes — the
+ * employee was offered and counted, just didn't show up. The SKT-04A penalty
+ * logic for ST areas is layered on separately in recordResponse.
  */
 export function shouldChargeInterim(responseType: ResponseType): boolean {
   switch (responseType) {
     case 'yes':
     case 'no':
+    case 'no_show':
       return true;
     default:
       return false;
@@ -70,8 +76,10 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
         posting_id: string;
         employee_id: string;
         status: string;
+        eligibility_at_offer: string | null;
       }>(
-        `SELECT id, posting_id, employee_id, status FROM offer WHERE id = ?`
+        `SELECT id, posting_id, employee_id, status, eligibility_at_offer
+           FROM offer WHERE id = ?`
       )
       .get(input.offer_id);
     if (!offer) throw new Error('offer not found: ' + input.offer_id);
@@ -86,17 +94,19 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
         volunteers_needed: number;
         duration_hours: number;
         pay_multiplier: number;
+        ot_type: string;
         status: string;
       }>(
-        `SELECT id, area_id, volunteers_needed, duration_hours, pay_multiplier, status
+        `SELECT id, area_id, volunteers_needed, duration_hours, pay_multiplier,
+                ot_type, status
            FROM posting WHERE id = ?`
       )
       .get(offer.posting_id);
     if (!posting) throw new Error('posting not found');
 
     const areaTypeRow = conn
-      .prepare<[string], { type: string }>(
-        `SELECT type FROM area WHERE id = ?`
+      .prepare<[string], { type: string; no_show_penalty_hours: number | null }>(
+        `SELECT type, no_show_penalty_hours FROM area WHERE id = ?`
       )
       .get(posting.area_id);
     const isST = areaTypeRow?.type === 'skilled_trades';
@@ -145,6 +155,22 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
     if (isST) {
       if (shouldChargeInterim(input.response_type)) {
         const weightedHours = posting.duration_hours * posting.pay_multiplier;
+
+        // SKT-04A no-show penalty triggers when the worker was offered
+        // overtime they accepted on RDO (volunteer slot) OR the posting
+        // covers weekend/holiday OT — and then no-showed. The penalty is
+        // an extra `area.no_show_penalty_hours` of hours_offered charged
+        // against the worker, on top of treating the slot as worked.
+        const isWeekendOrHoliday =
+          posting.ot_type === 'voluntary_weekend' ||
+          posting.ot_type === 'voluntary_holiday';
+        const isPenaltyEligibleNoShow =
+          input.response_type === 'no_show' &&
+          (offer.eligibility_at_offer === 'on_rdo_volunteer' || isWeekendOrHoliday);
+
+        // hours_offered always charges (yes / no / no_show) — the worker
+        // was contacted and was on the rotation. Counted regardless of
+        // outcome for the equalization unit.
         conn
           .prepare(
             `INSERT INTO charge
@@ -172,7 +198,11 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
           }
         });
 
-        if (input.response_type === 'yes') {
+        // hours_accepted charges on actual acceptance (yes) AND on the
+        // penalty-eligible no-show case — the worker is treated as if
+        // they worked the slot for tracking purposes (per SKT-04A: a
+        // weekend no-show "counts" as the worker having taken the OT).
+        if (input.response_type === 'yes' || isPenaltyEligibleNoShow) {
           conn
             .prepare(
               `INSERT INTO charge
@@ -196,9 +226,44 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
               charge_type: 'hours_accepted',
               amount: weightedHours,
               pay_multiplier: posting.pay_multiplier,
-              area_type: 'skilled_trades'
+              area_type: 'skilled_trades',
+              via: isPenaltyEligibleNoShow ? 'no_show_penalty_path' : 'yes'
             }
           });
+        }
+
+        // SKT-04A no-show penalty: extra hours_offered charge of
+        // area.no_show_penalty_hours (typically 1.0). This is the
+        // "extra hour" the contract assesses for breaking a
+        // weekend/holiday/RDO-volunteer commitment.
+        if (isPenaltyEligibleNoShow) {
+          const penalty = areaTypeRow?.no_show_penalty_hours ?? 0;
+          if (penalty > 0) {
+            conn
+              .prepare(
+                `INSERT INTO charge
+                   (offer_id, employee_id, area_id, charge_type, amount,
+                    mode_at_charge, charge_multiplier)
+                 VALUES (?, ?, ?, 'hours_offered', ?, 'final', 1.0)`
+              )
+              .run(offer.id, offer.employee_id, posting.area_id, penalty);
+            writeAudit({
+              actor_user: 'system',
+              actor_role: 'system',
+              action: 'no_show_penalty_applied',
+              area_id: posting.area_id,
+              posting_id: posting.id,
+              offer_id: offer.id,
+              employee_id: offer.employee_id,
+              data: {
+                penalty_hours: penalty,
+                trigger: offer.eligibility_at_offer === 'on_rdo_volunteer'
+                  ? 'on_rdo_volunteer'
+                  : posting.ot_type,
+                area_type: 'skilled_trades'
+              }
+            });
+          }
         }
 
         // Mark cycle_offered so apprentice gating in rotation_st.ts sees
@@ -782,13 +847,36 @@ function generateNextOfferST(
     required_expertise: posting.required_expertise
   };
 
-  const result = nextEligibleST(stPosting);
+  // First pass — apprentice gating in effect. Returns a candidate from the
+  // in-area pool or (if allow_inter_shop_canvass=1 and in-area empty) an
+  // inter-shop candidate.
+  let result = nextEligibleST(stPosting);
+  let phase: 'normal' | 'inter_shop_canvass' | 'apprentice_escalation' | null = result.phase;
+
+  // Step 4 ask-apprentices escalation: when the first pass returns no
+  // candidate AND apprentices were gated (the normal case where Step 3
+  // skipped them because journeypersons remained in-cycle), retry with
+  // apprentices unlocked. Tag the resulting offer phase explicitly so the
+  // audit log records that this came via escalation.
+  //
+  // No force-low fallback. Per SKT-04A interpretation in the round-2
+  // union meeting, forcing in ST areas is an untested contractual
+  // interpretation — if pursued by the Company it goes through the
+  // Grievance Procedure, not the rotation engine. If apprentices ALSO
+  // produce no candidate, the posting stays open with no offer created.
+  if (!result.candidate) {
+    const apprenticeResult = nextEligibleST(stPosting, { unlockApprentices: true });
+    if (apprenticeResult.candidate) {
+      result = apprenticeResult;
+      phase = 'apprentice_escalation';
+    }
+  }
 
   // Record audit-only skips for transparency. We don't insert response rows
   // for ST-specific skip reasons (shift_conflict / classification_mismatch /
   // expertise_mismatch / apprentice_gated) because the response.response_type
-  // CHECK constraint doesn't list them and SQLite doesn't support modifying
-  // CHECK constraints in place. The audit log captures the full skip set.
+  // CHECK constraint doesn't list them. The audit log captures the full skip
+  // set across both passes.
   for (const skip of result.skips) {
     writeAudit({
       actor_user: 'system',
@@ -797,30 +885,53 @@ function generateNextOfferST(
       area_id: posting.area_id,
       posting_id: posting.id,
       employee_id: skip.employee_id,
-      data: { reason: skip.reason, charged: false }
+      data: { reason: skip.reason, charged: false, phase }
     });
   }
 
-  if (!result.candidate) return null;
+  if (!result.candidate) {
+    // Both passes exhausted. Per SKT-04A interpretation, no force-low —
+    // posting stays open and the supervisor's options are grievance
+    // procedure or manual outside-shop request. Step 6 surfaces this
+    // state in the UI with a "pool exhausted — no force available" note.
+    writeAudit({
+      actor_user: 'system',
+      actor_role: 'system',
+      action: 'st_pool_exhausted',
+      area_id: posting.area_id,
+      posting_id: posting.id,
+      data: { note: 'no force-low per SKT-04A interpretation' }
+    });
+    return null;
+  }
 
   const c = result.candidate;
+  const offerSuffix =
+    phase === 'inter_shop_canvass' ? '-isc' :
+    phase === 'apprentice_escalation' ? '-app' : '-st';
+  // Random tail: in ST final-mode selection, the same employee can be the
+  // lowest-hours candidate across multiple iterations of a single posting
+  // (cycle doesn't advance like it does in interim mode), so an employee
+  // can legitimately receive multiple offers on the same posting. Append
+  // a short UUID slice to keep the offer.id unique.
   const offerId =
-    'ofr-' + posting.id.slice(5) + '-' + c.employee_id.split('-')[1] +
-    (result.phase === 'inter_shop_canvass' ? '-isc' : '-st');
+    'ofr-' + posting.id.slice(5) + '-' + c.employee_id.split('-')[1] + offerSuffix +
+    '-' + randomUUID().slice(0, 6);
 
   conn
     .prepare(
       `INSERT INTO offer
          (id, posting_id, employee_id, rotation_position, offered_by_user,
-          phase, status)
-       VALUES (?, ?, ?, 0, ?, ?, 'pending')`
+          phase, eligibility_at_offer, status)
+       VALUES (?, ?, ?, 0, ?, ?, ?, 'pending')`
     )
     .run(
       offerId,
       posting.id,
       c.employee_id,
       offered_by_user,
-      result.phase === 'inter_shop_canvass' ? 'inter_shop_canvass' : null
+      phase === 'normal' || phase == null ? null : phase,
+      c.eligibility_at_offer
     );
 
   writeAudit({
@@ -833,7 +944,7 @@ function generateNextOfferST(
     employee_id: c.employee_id,
     data: {
       area_type: 'skilled_trades',
-      phase: result.phase,
+      phase,
       eligibility_at_offer: c.eligibility_at_offer,
       source_area_id: c.source_area_id,
       pay_multiplier: posting.pay_multiplier,
