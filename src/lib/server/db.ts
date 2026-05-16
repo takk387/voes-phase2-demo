@@ -187,7 +187,12 @@ function rebuildOfferTableIfNeeded(conn: Database.Database) {
   const row = conn
     .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='offer'`)
     .get() as { sql: string } | undefined;
-  if (!row || row.sql.includes("'released'")) return;
+  // Step 6 adds 'proposed' to the offer.status CHECK. The rebuild runs when
+  // EITHER the Step 4 'released' value OR the Step 6 'proposed' value is
+  // missing from the current sql definition. Fresh DBs come up with both
+  // already in schemaSql, so this is a no-op in that case.
+  if (!row) return;
+  if (row.sql.includes("'released'") && row.sql.includes("'proposed'")) return;
 
   conn.pragma('foreign_keys = OFF');
   try {
@@ -201,7 +206,7 @@ function rebuildOfferTableIfNeeded(conn: Database.Database) {
         offered_by_user    TEXT NOT NULL,
         phase              TEXT,
         status             TEXT NOT NULL DEFAULT 'pending'
-                           CHECK(status IN ('pending','responded','expired','superseded','released')),
+                           CHECK(status IN ('proposed','pending','responded','expired','superseded','released')),
         eligibility_at_offer TEXT
       )
     `);

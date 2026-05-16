@@ -83,6 +83,13 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
       )
       .get(input.offer_id);
     if (!offer) throw new Error('offer not found: ' + input.offer_id);
+    if (offer.status === 'proposed') {
+      // Step 6: proposed offers are gated behind ST SV approval. The approval
+      // queue (Step 7) flips them to 'pending'; until then no response can be
+      // recorded. This is the response-side enforcement of the SV approval
+      // gate from Critical Rule #5.
+      throw new Error('offer awaits ST SV approval: ' + input.offer_id);
+    }
     if (offer.status !== 'pending') {
       throw new Error('offer already resolved: ' + input.offer_id);
     }
@@ -821,6 +828,17 @@ function generateNextOfferST(
 ): { offer_id: string; employee_id: string } | null {
   const conn = db();
 
+  // Step 6: when a posting is still gated by ST SV approval, the offer this
+  // pass creates lands as 'proposed' instead of 'pending'. The TM is not
+  // notified and cannot respond until the ST SV approves the posting (Step 7
+  // approval queue flips the posting flag + promotes the offer).
+  const approvalRow = conn
+    .prepare<[string], { pending_sv_approval: number }>(
+      `SELECT pending_sv_approval FROM posting WHERE id = ?`
+    )
+    .get(posting.id);
+  const isProposed = (approvalRow?.pending_sv_approval ?? 0) === 1;
+
   const hardQuals = conn
     .prepare<[string], { qualification_id: string }>(
       `SELECT qualification_id FROM posting_qualification WHERE posting_id = ?`
@@ -923,7 +941,7 @@ function generateNextOfferST(
       `INSERT INTO offer
          (id, posting_id, employee_id, rotation_position, offered_by_user,
           phase, eligibility_at_offer, status)
-       VALUES (?, ?, ?, 0, ?, ?, ?, 'pending')`
+       VALUES (?, ?, ?, 0, ?, ?, ?, ?)`
     )
     .run(
       offerId,
@@ -931,13 +949,14 @@ function generateNextOfferST(
       c.employee_id,
       offered_by_user,
       phase === 'normal' || phase == null ? null : phase,
-      c.eligibility_at_offer
+      c.eligibility_at_offer,
+      isProposed ? 'proposed' : 'pending'
     );
 
   writeAudit({
     actor_user: offered_by_user,
     actor_role: offered_by_role,
-    action: 'offer_made',
+    action: isProposed ? 'st_offer_proposed' : 'offer_made',
     area_id: posting.area_id,
     posting_id: posting.id,
     offer_id: offerId,
@@ -949,9 +968,80 @@ function generateNextOfferST(
       source_area_id: c.source_area_id,
       pay_multiplier: posting.pay_multiplier,
       preferred_quals_matched: c.preferred_quals_matched,
-      is_apprentice: c.is_apprentice === 1
+      is_apprentice: c.is_apprentice === 1,
+      pending_sv_approval: isProposed
     }
   });
 
   return { offer_id: offerId, employee_id: c.employee_id };
+}
+
+/**
+ * Promote the proposed offer on an ST posting to a real pending offer once
+ * the ST SV approves. Clears posting.pending_sv_approval, flips status
+ * proposed -> pending, and writes the approval audit entry. Step 7's
+ * `/sv/approvals` action will call this; Step 6 ships the function so the
+ * proposed-state plumbing is exercised end-to-end.
+ */
+export function approveProposedSTPosting(
+  posting_id: string,
+  approved_by_user: string,
+  approved_by_role: string
+): { offer_id: string | null; employee_id: string | null } {
+  return withTransaction((conn) => {
+    const posting = conn
+      .prepare<[string], { id: string; area_id: string; pending_sv_approval: number }>(
+        `SELECT id, area_id, pending_sv_approval FROM posting WHERE id = ?`
+      )
+      .get(posting_id);
+    if (!posting) throw new Error('posting not found');
+    if (posting.pending_sv_approval !== 1) {
+      throw new Error('posting is not awaiting SV approval');
+    }
+
+    conn
+      .prepare(`UPDATE posting SET pending_sv_approval = 0 WHERE id = ?`)
+      .run(posting_id);
+
+    // Promote any proposed offers (typically just one — the first lowest-hours
+    // candidate the algorithm picked when the posting was created) to pending.
+    const proposed = conn
+      .prepare<[string], { id: string; employee_id: string }>(
+        `SELECT id, employee_id FROM offer
+          WHERE posting_id = ? AND status = 'proposed'`
+      )
+      .all(posting_id);
+    for (const o of proposed) {
+      conn
+        .prepare(`UPDATE offer SET status = 'pending' WHERE id = ?`)
+        .run(o.id);
+      writeAudit({
+        actor_user: 'system',
+        actor_role: 'system',
+        action: 'offer_made',
+        area_id: posting.area_id,
+        posting_id,
+        offer_id: o.id,
+        employee_id: o.employee_id,
+        data: {
+          area_type: 'skilled_trades',
+          via: 'sv_approval_promotion'
+        }
+      });
+    }
+
+    writeAudit({
+      actor_user: approved_by_user,
+      actor_role: approved_by_role,
+      action: 'sv_approved_st_posting',
+      area_id: posting.area_id,
+      posting_id,
+      data: { promoted_offers: proposed.length }
+    });
+
+    return {
+      offer_id: proposed[0]?.id ?? null,
+      employee_id: proposed[0]?.employee_id ?? null
+    };
+  });
 }

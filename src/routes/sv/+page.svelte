@@ -7,16 +7,64 @@
     const d = new Date(iso + 'T00:00:00');
     return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
+  function multiplierLabel(m: number): string {
+    if (m === 1.5) return '1.5×';
+    if (m === 2.0) return '2.0×';
+    return '1.0×';
+  }
 </script>
 
 <div class="space-y-6">
   <div class="flex items-baseline justify-between">
     <div>
-      <h1 class="text-2xl font-semibold">Supervisor dashboard</h1>
-      <p class="text-sm text-ink-600 mt-0.5">Areas you supervise.</p>
+      <h1 class="text-2xl font-semibold">
+        {data.isSTSupervisor ? 'Skilled Trades supervisor' : 'Supervisor'} dashboard
+      </h1>
+      <p class="text-sm text-ink-600 mt-0.5">
+        {data.isSTSupervisor ? 'Your dedicated Skilled Trades area.' : 'Areas you supervise.'}
+      </p>
     </div>
-    <a href="/sv/bypass" class="text-sm text-accent-700 hover:underline">Flag bypass &rarr;</a>
+    {#if !data.isSTSupervisor}
+      <a href="/sv/bypass" class="text-sm text-accent-700 hover:underline">Flag bypass &rarr;</a>
+    {/if}
   </div>
+
+  <!-- ST: postings awaiting your approval. The real queue UI ships in Step 7. -->
+  {#if data.isSTSupervisor && data.stPendingApprovals.length > 0}
+    <div class="card border-amber-300 ring-1 ring-amber-200">
+      <div class="card-header bg-amber-50/80 flex items-center justify-between">
+        <span class="font-medium text-sm">
+          ST postings awaiting your approval ({data.stPendingApprovals.length})
+        </span>
+        <a href="/sv/approvals" class="text-xs text-accent-700 hover:underline">Open approval queue →</a>
+      </div>
+      <div class="card-body">
+        <ul class="text-sm divide-y divide-ink-100">
+          {#each data.stPendingApprovals as p}
+            <li class="py-2 flex items-center justify-between">
+              <div>
+                <span class="font-medium">{p.area_name}</span>
+                <span class="text-xs text-ink-600 ml-2">
+                  {formatDate(p.work_date)} &middot; {p.start_time} &middot;
+                  {p.duration_hours}h &middot; {multiplierLabel(p.pay_multiplier)}
+                </span>
+                {#if p.required_classification}
+                  <span class="text-xs text-ink-700 ml-1">&middot; {p.required_classification}</span>
+                {:else if p.required_expertise}
+                  <span class="text-xs text-ink-700 ml-1">&middot; any {p.required_expertise}</span>
+                {/if}
+              </div>
+              <a href="/coord/posting/{p.id}" class="text-xs text-accent-700 hover:underline">review →</a>
+            </li>
+          {/each}
+        </ul>
+        <p class="text-xs text-ink-500 mt-2 italic">
+          Approval queue UI ships in Step 7. For now, click through to review
+          each posting's proposed candidate.
+        </p>
+      </div>
+    </div>
+  {/if}
 
   {#if data.openRemedies.length > 0}
     <div class="card border-amber-300 ring-1 ring-amber-200">
@@ -40,6 +88,7 @@
     </div>
   {/if}
 
+  {#if !data.isSTSupervisor}
   {#each data.areas as area}
     {#if area}
     <div class="card">
@@ -108,4 +157,28 @@
     </div>
     {/if}
   {/each}
+  {/if}
+
+  {#if data.isSTSupervisor}
+    {#each data.areas as area}
+      {#if area}
+        <div class="card">
+          <div class="card-header">
+            <span class="font-semibold">{area.name}</span>
+            <span class="ml-2 badge-blue text-xs">Skilled Trades</span>
+          </div>
+          <div class="card-body space-y-2 text-sm">
+            <p class="text-ink-700">
+              {area.memberCount} members. Approvals come from the STAC Coordinator
+              (Davis) and the SKT TL.
+            </p>
+            <div class="flex gap-3 text-xs">
+              <a href="/tm/area?area={area.id}" class="text-accent-700 hover:underline">Equalization list</a>
+              <a href="/audit?area={area.id}" class="text-accent-700 hover:underline">Audit log</a>
+            </div>
+          </div>
+        </div>
+      {/if}
+    {/each}
+  {/if}
 </div>

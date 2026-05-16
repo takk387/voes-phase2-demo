@@ -585,4 +585,123 @@ describe('Step 4 upgrade path — pre-Step-4 DB shape rebuilds cleanly', () => {
     expect(offerCount).toEqual({ c: 1 });
     expect(responseCount).toEqual({ c: 1 });
   });
+
+  it('Step 6: offer rebuild also picks up the proposed status value', () => {
+    runMigrations(conn);
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO offer (id, posting_id, employee_id, offered_by_user, status)
+           VALUES ('ofr-prop', 'pst-up', 'emp-up', 'seed', 'proposed')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+});
+
+// ============================================================================
+// Step 6 upgrade-path regression
+//
+// Simulates an on-disk DB that already shipped Step 4 (offer.status CHECK
+// includes 'released' but not 'proposed') and verifies the Step 6 rebuild
+// picks up just the new value without breaking pre-existing rows.
+// ============================================================================
+
+describe('Step 6 upgrade path — Step-4-era DB picks up proposed without churn', () => {
+  let conn: Database.Database;
+
+  beforeEach(() => {
+    conn = new Database(':memory:');
+    conn.pragma('foreign_keys = ON');
+    // Step-4-era offer table (has 'released' but not 'proposed') + response
+    // already including 'no_show'. Step 6's rebuildOfferTableIfNeeded should
+    // detect that 'proposed' is missing and rebuild.
+    conn.exec(`
+      CREATE TABLE posting (id TEXT PRIMARY KEY);
+      CREATE TABLE employee (id TEXT PRIMARY KEY);
+      CREATE TABLE offer (
+        id TEXT PRIMARY KEY,
+        posting_id TEXT NOT NULL REFERENCES posting(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        rotation_position INTEGER,
+        offered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        offered_by_user TEXT NOT NULL,
+        phase TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending','responded','expired','superseded','released')),
+        eligibility_at_offer TEXT
+      );
+      CREATE TABLE response (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        response_type TEXT NOT NULL CHECK(response_type IN (
+          'yes','no','no_show','passed_over_unqualified','on_leave',
+          'on_the_job','no_contact','supervisor_override'
+        )),
+        recorded_at TEXT,
+        recorded_by_user TEXT NOT NULL,
+        recorded_via TEXT NOT NULL DEFAULT 'team_member',
+        reason TEXT,
+        supersedes_response_id INTEGER REFERENCES response(id)
+      );
+      CREATE TABLE area (id TEXT PRIMARY KEY, name TEXT, shop TEXT, line TEXT, shift TEXT);
+      CREATE TABLE charge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        area_id TEXT NOT NULL REFERENCES area(id),
+        charge_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        mode_at_charge TEXT NOT NULL,
+        recorded_at TEXT,
+        reverses_charge_id INTEGER REFERENCES charge(id),
+        cycle_number INTEGER
+      );
+      CREATE TABLE shift_pattern (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        cycle_length_days INTEGER NOT NULL,
+        crew_count INTEGER NOT NULL,
+        calendar_json TEXT NOT NULL,
+        description TEXT
+      );
+    `);
+    conn.prepare(`INSERT INTO posting VALUES ('pst-s6')`).run();
+    conn.prepare(`INSERT INTO employee VALUES ('emp-s6')`).run();
+    conn
+      .prepare(
+        `INSERT INTO offer (id, posting_id, employee_id, offered_by_user, status)
+         VALUES ('ofr-s6', 'pst-s6', 'emp-s6', 'seed', 'pending')`
+      )
+      .run();
+  });
+
+  it('rebuilds offer table; proposed value newly allowed', () => {
+    runMigrations(conn);
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO offer (id, posting_id, employee_id, offered_by_user, status)
+           VALUES ('ofr-s6-prop', 'pst-s6', 'emp-s6', 'seed', 'proposed')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+
+  it('pre-existing pending offer survives the Step 6 rebuild', () => {
+    runMigrations(conn);
+    const row = conn
+      .prepare(`SELECT status FROM offer WHERE id = 'ofr-s6'`)
+      .get() as { status: string };
+    expect(row.status).toBe('pending');
+  });
+
+  it('Step 6 rebuild is idempotent on a freshly-rebuilt DB', () => {
+    runMigrations(conn);
+    runMigrations(conn);
+    const row = conn
+      .prepare(`SELECT COUNT(*) AS c FROM offer`)
+      .get();
+    expect(row).toEqual({ c: 1 });
+  });
 });

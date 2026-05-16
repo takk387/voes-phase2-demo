@@ -809,17 +809,30 @@ Tests:
 ```
 
 **Done When:**
-- [ ] /coord and /skt-tl routes shipped with shared post form
-- [ ] Proposed posting state ships correctly
-- [ ] Type badges + ST indicators across existing pages
-- [ ] **TM dashboard 7-day calendar strip for ST employees**
-- [ ] **TM dashboard "Next 4 weeks" + "Last 4 weeks" expandable views for rotating-pattern employees**
-- [ ] **/admin/patterns route renders all 8 patterns in calendar grid
+- [x] /coord and /skt-tl routes shipped with shared post form
+- [x] Proposed posting state ships correctly
+- [x] Type badges + ST indicators across existing pages
+- [x] **TM dashboard 7-day calendar strip for ST employees**
+- [x] **TM dashboard "Next 4 weeks" + "Last 4 weeks" expandable views for rotating-pattern employees**
+- [x] **/admin/patterns route renders all 8 patterns in calendar grid
       visually matching contract page images**
-- [ ] Cutover hidden for ST areas
-- [ ] Dedicated ST SV personas see only their single ST area; production
+- [x] Cutover hidden for ST areas
+- [x] Dedicated ST SV personas see only their single ST area; production
       SVs see only production areas
-- [ ] Production UI regression check passes
+- [x] Production UI regression check passes
+
+**Completion notes (2026-05-15):**
+- New routes: [/coord](phase2/src/routes/coord/+page.svelte) + [/coord/post](phase2/src/routes/coord/post/+page.svelte) + [/coord/posting/[id]](phase2/src/routes/coord/posting/[id]/+page.svelte), [/skt-tl](phase2/src/routes/skt-tl/+page.svelte) + [/skt-tl/post](phase2/src/routes/skt-tl/post/+page.svelte), [/admin/patterns](phase2/src/routes/admin/patterns/+page.svelte). Root redirect now sends `skt_coordinator` → /coord, `skt_tl` → /skt-tl, `st_supervisor` → /sv (which branches on role).
+- **Proposed-offer flow:** Schema extends `offer.status` CHECK to allow `'proposed'` (rebuild path in [db.ts](phase2/src/lib/server/db.ts) detects `'released'` AND `'proposed'`; the Step 4 rebuild now also handles Step 6 in a single pass on first migrate, and Step 6's rebuild on top of a Step-4-era DB triggers only when `'proposed'` is missing). `generateNextOfferST` reads `posting.pending_sv_approval`; when 1, the offer lands as `status='proposed'` with audit action `st_offer_proposed`. `recordResponse` rejects with `"offer awaits ST SV approval"` for proposed offers. New `approveProposedSTPosting()` promotes proposed → pending, clears the flag, writes `sv_approved_st_posting` audit + an `offer_made` audit per promoted offer.
+- **Shared form component:** [STPostingForm.svelte](phase2/src/lib/components/STPostingForm.svelte) is used by both `/coord/post` and `/skt-tl/post`. The form action handler lives at [st_posting_actions.ts](phase2/src/lib/server/st_posting_actions.ts) (SvelteKit doesn't allow arbitrary named exports from a +page.server.ts — extracted to $lib to satisfy that constraint while keeping a single code path for the create logic).
+- **Rotation runner at /coord/posting/[id]:** Shared by `skt_coordinator`, `skt_tl`, `st_supervisor`, and `admin` — scope-checked per role. "Awaiting SV approval" amber banner when `pending_sv_approval=1`; response buttons disabled until approved; phase badges for `apprentice_escalation` + `inter_shop_canvass`; ST-specific eligibility column (on RDO / normal shift); accepted-workers list with release-excess collapsible (Step 4 endpoint). When the eligible pool is exhausted, the page explains "no force-low per SKT-04A interpretation" — Critical Rule #4 made visible in-UI.
+- **ScheduleStrip:** [schedule_view.ts](phase2/src/lib/server/schedule_view.ts) computes three grids server-side using the Step 2 cycle math (this week, next 28 days, last 28 days). [ScheduleStrip.svelte](phase2/src/lib/components/ScheduleStrip.svelte) renders them: 7-cell strip with today outlined + two expandable 4-week grids. Color scheme: D = blue, A = amber, N = ink-700, RDO = ink-100, matching `/admin/patterns`. Last 4 weeks is the negative-dayDelta history path (positive-modulo handled by Step 2's helper). Wired into [/tm](phase2/src/routes/tm/+page.svelte) — fires only for ST employees (`primaryArea.area_type === 'skilled_trades'` AND `employee.shift_pattern_id != null`). Production TMs see no change.
+- **/admin/patterns:** Lists all 8 SKT-04A shift patterns as crew × day calendar grids. Each crew rendered as a row of week-chunks (so a 28-day pattern shows 4 stacked 7-cell weeks). Per-crew D/A/N/RDO totals make the 4-crew rotating Crew 4 asymmetry visible at a glance (Step 2 documented this: Crew 4 has 10 N + 4 D vs other crews' 7+7 — totals match average but the crew is "predominantly nights"). Color-coded cells pixel-comparable to `cba_pages/page_215.png` through `page_217.png`. Link card added at the bottom of `/admin` for discoverability.
+- **/sv branches on role:** Production supervisors see the existing dashboard untouched. ST supervisors see a compact area card per their scope + an amber "ST postings awaiting your approval" card that lists pending postings and links into `/coord/posting/[id]` for review (Step 7 ships the actual approve/reject queue at `/sv/approvals`).
+- **/admin badges + cutover hidden for ST areas:** Areas table now sorted by type (production first, then ST). ST rows show a "Skilled Trades" badge, mode column reads "n/a (ST)" with italic hint, cycle column shows `—`, and the cutover button is replaced with "No cutover (SKT-04A)" inline text. The zero-out button remains since SKT-04A does have an annual zero-out (January).
+- **Tests: 162/162 pass** (138 prior + **20 new Step 6 tests** in [step6.test.ts](phase2/src/lib/server/step6.test.ts) + **4 new schema_migration tests** for the offer.status `'proposed'` value + Step 6 upgrade path from a Step-4-era DB). New tests cover: proposed offer creation, response-blocking guard, `approveProposedSTPosting` flip + audit, production regression (production offers still pending), `buildScheduleView` 7-day/4-week grids + today highlighting + rotating-crew differentiation + production null fallback, `summarizeSTArea` expertise counts + lowest-hours next-up + pending_sv_approval flag.
+- **End-to-end smoke against live preview:** Seeded fresh DB → coord-davis posts an Electrical OT in Body 1st at 1.5× via `/coord/post` form action → server creates posting with `pending_sv_approval=1` → algorithm picks Vasquez (lowest-hours Electrician at 8h) → offer lands as `status='proposed'` → `/coord/posting/[id]` renders the "Awaiting SV approval" banner, "Proposed offer" card, and Vasquez's details. All ST persona landings 200; production routes 200 unchanged; production tm-newman correctly does NOT render the schedule strip.
+- `npm run check` 0 errors / 0 warnings on 431 files. `npm run build` clean (adapter-node, 7.2s). `npm run seed` produces 7 areas / 63 employees / 14 qualifications / 138 charges / 8 shift patterns baseline.
 
 ---
 
@@ -1081,7 +1094,7 @@ end-to-end and confirming every UI element actually exists.
 | 3 | Rotation engine routing + ST charge calc + apprentice gating + soft quals + inter-shop canvass | ✅ |
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ✅ |
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ✅ |
-| 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ⬜ |
+| 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ✅ |
 | 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ⬜ |
 | 8 | WALKTHROUGH_ST.md + production cross-reference | ⬜ |
 

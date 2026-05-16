@@ -7,6 +7,7 @@ import { db } from '$lib/server/db';
 import { writeAudit } from '$lib/server/audit';
 import { areaStanding, getCurrentCycle } from '$lib/server/rotation';
 import { listRemediesByEmployee } from '$lib/server/remedies';
+import { buildScheduleView, type ScheduleView } from '$lib/server/schedule_view';
 
 export const load: PageServerLoad = ({ locals }) => {
   const persona = locals.persona;
@@ -20,17 +21,25 @@ export const load: PageServerLoad = ({ locals }) => {
       id: string; display_name: string; hire_date: string; status: string;
       notif_in_app: number; notif_sms: number; notif_email: number;
       notif_preferences_set_at: string | null;
+      classification: string;
+      area_of_expertise: string | null;
+      is_apprentice: number;
+      shift_pattern_id: number | null;
+      crew_position: number | null;
+      cycle_anchor_date: string | null;
     }>(
       `SELECT id, display_name, hire_date, status,
-              notif_in_app, notif_sms, notif_email, notif_preferences_set_at
+              notif_in_app, notif_sms, notif_email, notif_preferences_set_at,
+              classification, area_of_expertise, is_apprentice,
+              shift_pattern_id, crew_position, cycle_anchor_date
          FROM employee WHERE id = ?`
     )
     .get(persona.employee_id);
   if (!employee) error(404, 'Employee not found');
 
   const memberships = conn
-    .prepare<[string], { area_id: string; area_name: string; mode: string }>(
-      `SELECT m.area_id, a.name AS area_name, ams.mode
+    .prepare<[string], { area_id: string; area_name: string; mode: string; area_type: string }>(
+      `SELECT m.area_id, a.name AS area_name, ams.mode, a.type AS area_type
          FROM area_membership m
          JOIN area a ON a.id = m.area_id
          JOIN area_mode_setting ams
@@ -101,6 +110,28 @@ export const load: PageServerLoad = ({ locals }) => {
   const myRemedies = listRemediesByEmployee(employee.id);
   const openRemedies = myRemedies.filter((r) => r.status === 'open');
 
+  // ST employees: compute the schedule-strip data (this week + ±4 weeks) so
+  // the dashboard can render the shift-pattern visualisation. Production
+  // employees pass null and the component is hidden.
+  let scheduleView: ScheduleView | null = null;
+  const isSTEmployee = primaryArea.area_type === 'skilled_trades';
+  if (isSTEmployee && employee.shift_pattern_id != null) {
+    scheduleView = buildScheduleView({
+      shift_pattern_id: employee.shift_pattern_id,
+      crew_position: employee.crew_position,
+      cycle_anchor_date: employee.cycle_anchor_date
+    });
+  }
+
+  // Soft quals an ST TM holds (informational on the dashboard — these
+  // are the "preferred" qualifications that act as tiebreakers in ST
+  // rotation). Returned for every employee but only surfaced for ST.
+  const softQualNames = isSTEmployee
+    ? (myStanding?.qualifications ?? []).filter((q) =>
+        /weld|high.?lift|confined/i.test(q)
+      )
+    : [];
+
   return {
     employee,
     area: primaryArea,
@@ -110,7 +141,10 @@ export const load: PageServerLoad = ({ locals }) => {
     history,
     teamSize: standing.length,
     openRemedies,
-    needsNotifPrefs: !employee.notif_preferences_set_at
+    needsNotifPrefs: !employee.notif_preferences_set_at,
+    isSTEmployee,
+    scheduleView,
+    softQualNames
   };
 };
 

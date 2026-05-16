@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ActionData, PageData } from './$types';
   import { enhance } from '$app/forms';
+  import ScheduleStrip from '$lib/components/ScheduleStrip.svelte';
 
   interface Props { data: PageData; form?: ActionData; }
   let { data, form }: Props = $props();
@@ -101,8 +102,36 @@
     <h1 class="text-2xl font-semibold text-ink-900">Hi, {data.employee.display_name.split(',')[0]}.</h1>
     <p class="text-sm text-ink-600 mt-0.5">
       Your overtime standing in <span class="font-medium">{data.area.area_name}</span>
+      {#if data.isSTEmployee}<span class="ml-1 badge-blue text-xs">Skilled Trades</span>{/if}
     </p>
+    {#if data.isSTEmployee}
+      <div class="mt-1 flex gap-2 flex-wrap text-xs">
+        {#if data.employee.area_of_expertise}
+          <span class="badge-gray">Expertise: {data.employee.area_of_expertise}</span>
+        {/if}
+        {#if data.employee.classification && data.employee.classification !== 'production'}
+          <span class="badge-gray">
+            {#if data.employee.is_apprentice}
+              Apprentice — {data.employee.area_of_expertise ?? data.employee.classification}
+            {:else}
+              {data.employee.classification}
+            {/if}
+          </span>
+        {/if}
+        {#if data.employee.is_apprentice}
+          <span class="badge-amber">apprentice — eligible after all journeypersons in your group are offered this cycle</span>
+        {/if}
+        {#each data.softQualNames as q}
+          <span class="badge-blue">{q}</span>
+        {/each}
+      </div>
+    {/if}
   </div>
+
+  <!-- ST schedule visuals: this-week strip + Next/Last 4 weeks expandable -->
+  {#if data.scheduleView}
+    <ScheduleStrip view={data.scheduleView} />
+  {/if}
 
   <!-- Open bypass remedy notice -->
   {#if data.openRemedies.length > 0}

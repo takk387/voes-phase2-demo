@@ -13,9 +13,9 @@ export const load: PageServerLoad = ({ locals }) => {
   const areas = conn
     .prepare<[], {
       id: string; name: string; mode: 'interim' | 'final'; tm_count: number;
-      first_cycle: number; current_cycle: number;
+      first_cycle: number; current_cycle: number; type: string;
     }>(
-      `SELECT a.id, a.name, ams.mode,
+      `SELECT a.id, a.name, a.type, ams.mode,
               (SELECT COUNT(*) FROM area_membership m
                  WHERE m.area_id = a.id AND m.effective_end_date IS NULL) AS tm_count,
               rs.first_cycle_after_cutover AS first_cycle,
@@ -25,7 +25,7 @@ export const load: PageServerLoad = ({ locals }) => {
            ON ams.area_id = a.id AND ams.effective_end_date IS NULL
     LEFT JOIN rotation_state rs ON rs.area_id = a.id
         WHERE a.status = 'active'
-        ORDER BY a.shop, a.shift`
+        ORDER BY a.type, a.shop, a.shift`
     )
     .all();
 

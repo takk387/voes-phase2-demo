@@ -51,11 +51,18 @@
           {#each data.areas as a}
             <tr class="border-b border-ink-100 last:border-b-0">
               <td class="px-4 py-3">
-                <div class="font-medium">{a.name}</div>
+                <div class="font-medium">
+                  {a.name}
+                  {#if a.type === 'skilled_trades'}
+                    <span class="ml-1 badge-blue text-xs">Skilled Trades</span>
+                  {/if}
+                </div>
                 <div class="text-xs text-ink-500 font-mono">{a.id}</div>
               </td>
               <td class="px-4 py-3">
-                {#if a.mode === 'final'}
+                {#if a.type === 'skilled_trades'}
+                  <span class="badge-gray text-xs italic">n/a (ST)</span>
+                {:else if a.mode === 'final'}
                   <span class="badge-blue">final</span>
                   {#if a.first_cycle === 1}
                     <span class="badge-amber ml-1">first cycle</span>
@@ -65,10 +72,15 @@
                 {/if}
               </td>
               <td class="px-4 py-3 text-right tabular">{a.tm_count}</td>
-              <td class="px-4 py-3 text-right tabular">{a.current_cycle}</td>
+              <td class="px-4 py-3 text-right tabular">
+                {a.type === 'skilled_trades' ? '—' : a.current_cycle}
+              </td>
               <td class="px-4 py-3">
                 <div class="flex gap-2 flex-wrap">
-                  {#if a.mode === 'interim'}
+                  {#if a.type === 'skilled_trades'}
+                    <!-- ST uses SKT-04A continuous final-mode; no cutover -->
+                    <span class="text-xs text-ink-500 italic">No cutover (SKT-04A)</span>
+                  {:else if a.mode === 'interim'}
                     <form method="POST" action="?/initiate_cutover" use:enhance>
                       <input type="hidden" name="area_id" value={a.id} />
                       <button class="btn-secondary text-xs px-3 py-1.5" type="submit">
@@ -186,6 +198,24 @@
           per retention policy. Production reassignment of TMs is handled outside the system.
         </p>
       </details>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="font-medium text-sm">Skilled Trades references</span>
+    </div>
+    <div class="card-body space-y-2 text-sm">
+      <a href="/admin/patterns" class="text-accent-700 hover:underline">
+        Shift pattern preview →
+      </a>
+      <p class="text-xs text-ink-500">
+        Renders all 8 SKT-04A shift patterns (fixed_day, fixed_evening,
+        fixed_night, 1_crew_weekend, 2_crew_fixed_d_n,
+        2_crew_fixed_d_afternoon, 4_crew_12h_rotating, 4_crew_12h_fixed)
+        as crew × day calendars. Use to verify the rotation math against
+        the contract images.
+      </p>
     </div>
   </div>
 

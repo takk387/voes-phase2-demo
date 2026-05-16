@@ -178,8 +178,12 @@ CREATE TABLE IF NOT EXISTS offer (
   offered_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   offered_by_user    TEXT NOT NULL,
   phase              TEXT,
+  -- 'proposed' (Step 6): ST offer generated alongside a pending_sv_approval
+  -- posting, shown to coord/TL/SV but NOT acted on by the TM until the ST SV
+  -- approves the parent posting (which flips proposed -> pending and notifies
+  -- the TM). Step 7 ships the approval queue; Step 6 ships the proposed state.
   status             TEXT NOT NULL DEFAULT 'pending'
-                     CHECK(status IN ('pending','responded','expired','superseded','released')),
+                     CHECK(status IN ('proposed','pending','responded','expired','superseded','released')),
   -- SKT-04A no-show penalty (Step 4): captured at offer creation so the
   -- no-show charge logic can know whether the candidate was on RDO vs on
   -- a normal shift without recomputing cycle math. Production offers leave
