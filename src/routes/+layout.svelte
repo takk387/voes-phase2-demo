@@ -69,6 +69,7 @@
         {/if}
         <a href="/audit" class="hover:text-ink-700 underline">Audit log</a>
         <a href="/walkthrough" class="hover:text-ink-700 underline">Walkthrough</a>
+        <a href="/walkthrough-st" class="hover:text-ink-700 underline">ST walkthrough</a>
         <form
           method="POST"
           action="/demo/reset"
