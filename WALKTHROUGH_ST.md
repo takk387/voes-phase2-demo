@@ -1,10 +1,31 @@
 # VOES Phase 2 — Skilled Trades Demo Walkthrough
 
-**Audience:** Joint Committee, STAC, plant management, local Union (Skilled Trades side), ideas-program reviewers.
-**Length:** 25-30 minutes if you click through everything; ~15 if you skip the open-ended exploration at the end.
-**Setup:** Browser open to the demo URL. Switch to **Vasquez, R. (Body ST)** via the header persona dropdown. State should be freshly seeded; if not, click **Reset demo** in the footer.
+This demo walks through the Skilled Trades flow (SKT-04A) — a second `area_type` on the same VOES platform, dispatching to a different rule set from production OT. Every feature exists because the contract demands it or the parties have agreed to it. For the production-OT walkthrough, see [WALKTHROUGH.md](WALKTHROUGH.md).
 
-This walkthrough is the companion to [WALKTHROUGH.md](WALKTHROUGH.md), which covers production-OT (PS-036) areas. Skilled Trades runs on the same platform — same data model, same audit log, same auth, same persona switcher — but a second `area_type` (`skilled_trades`) dispatches to a different rule set drawn from **SKT-04A** (CBA pages 215-216 internal). The order below follows an ST OT opportunity through the system: a TM checks their schedule and standing, an SKT TL or STAC Coordinator posts and runs the rotation, the ST Supervisor approves, edge cases (apprentice escalation, no-show penalty, release-excess) get handled. Pause for questions at any of the marked moments.
+## What this demo shows
+
+- **Hours-of-pay charging (1.0× / 1.5× / 2.0×)** — equalization counts pay hours, not clock hours; multiplier weighting is contractually explicit. (SKT-04A pages 215-216)
+- **Equalization unit = shop × shift × area_of_expertise** — Electricians equalize against Electricians, Mechanicals against Mechanicals; not pooled across expertise. (SKT-04A page 215)
+- **Classification targeting (Electrician, Millwright, ToolMaker, PipeFitter)** — postings can target the specific trade or the broader expertise group. (SKT-04A page 215; round-2 union meeting clarification)
+- **Soft-qual preference (welding, high-lift, confined-space)** — peripheral certs sort candidates but never exclude. (Round-2 clarification)
+- **8 SKT-04A shift patterns rendered as pixel-accurate calendars at `/admin/patterns`** — the system's understanding of the rotation math is visible and checkable side-by-side with the contract pages, not narrated. (SKT-04A pages 215-217)
+- **Schedule-aware eligibility via cycle math (D / N / A / RDO from pattern + crew_position + cycle anchor)** — rotating-shift workers can't be called for OT on a day they're working a conflicting shift; the system reads this from the pattern, not from a manually-set "this week" flag. (SKT-04A pages 215-217; Option C integration decision)
+- **7-day strip + "Next 4 weeks" + "Last 4 weeks" calendar on TM dashboard** — forward view for offer eligibility, backward view for grievance reconstruction. Same cycle math both directions. (SKT-04A; spec §11.1)
+- **Apprentice gating** — apprentices receive offers only after all journeypersons in their expertise have been offered in the current cycle. (SKT-04A page 215)
+- **Graduated apprentice "Highest plus 1 hour" placement** — newly-graduated journey doesn't land as next-up the day they cross over. (SKT-04A graduated-apprentice clause; Phase 2 seeds manually, Phase 3 automates)
+- **SKT TL and STAC Coordinator as origin roles** — ST work is initiated by the trades crew lead or STAC-designated coordinator, not the Supervisor. (SKT-04A page 211 item 5: "STAC may designate hourly coordinators"; round-2 clarification)
+- **Dedicated ST Supervisor per area approves before the offer goes live** — SV signs off on whether the posted work is legitimate before TMs are pulled in to respond. Production SVs do not pick up ST scope. (Round-2 clarification)
+- **Inter-shop canvass as a normal option, not an escalation** — skilled classifications are scarce per shop; crossing shop boundaries within the same shift is expected. (SKT-04A page 216)
+- **Apprentice escalation when journey pool exhausts — NO force-low for ST** — forcing in ST is an untested contractual interpretation; demo defaults to no force; grievance procedure handles disputes. (SKT-04A is silent on force authority for ST; round-2 clarification; Critical Rule #4 in the implementation plan)
+- **+1 hour no-show penalty on volunteered RDO / weekend / holiday OT** — penalty for accepting volunteer work and then not showing. Captured at offer creation via `eligibility_at_offer` so no clock-drift risk. (SKT-04A page 216)
+- **Reverse-selection "go home" — highest-hours released first** — the worker most equalized to the work is released first when scope shrinks; lower-hours workers retain the assignment. (SKT-04A)
+- **Notification policy: no home contact except documented emergency, Union notified** — stricter than PS-036's in-app-default + opt-in off-site. (SKT-04A; round-2 clarification on emergency-exception flow)
+- **Annual zero-out at January** — calendar-year reset specific to ST. (SKT-04A)
+- **30-day charge challenge window** — disputes filed within 30 days of the charge. (SKT-04A)
+- **Full Union Rep audit access including TM "Last 4 weeks" schedule reconstruction** — same read-equity for ST as for production; reconstruction reads the same source the engine reads at offer time. (Spec §11.4; round-2 clarification)
+- **4 ST-specific compliance checks (9-12) alongside the 8 production checks** — apprentice gating, no force-low (runtime safety net), multiplier matching, SV-approval-non-bypassable. (SKT-04A; round-2 Critical Rules; spec §16)
+
+State should be freshly seeded; click **Reset demo** in the footer if not. The sections below take the reviewer through each feature in roughly the order an ST OT opportunity flows through the system. Pause for questions at any of the marked moments.
 
 ---
 

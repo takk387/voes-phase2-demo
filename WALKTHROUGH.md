@@ -1,12 +1,28 @@
 # VOES Phase 2 — Production OT Demo Walkthrough
 
-**Audience:** Joint Committee, plant management, local Union, ideas-program reviewers.
-**Length:** 20 minutes if you click through everything; 10 if you skip the open-ended exploration at the end.
-**Setup:** Browser open to the demo URL. Default persona is Newman (Team Member, Paint 2nd — final mode). State should be freshly seeded; if not, run `npm run seed` to reset.
+This demo walks through the production-OT (PS-036) flow. Every feature exists because the contract demands it or the parties have agreed to it. The Skilled Trades flow runs on the same platform with the SKT-04A rule set — see [WALKTHROUGH_ST.md](WALKTHROUGH_ST.md).
 
-> **Two walkthroughs.** This one covers production OT (PS-036) areas — Body, Paint, Battery, Finish. Skilled Trades is on the same platform with a separate rule set drawn from SKT-04A; see [WALKTHROUGH_ST.md](WALKTHROUGH_ST.md) for that demo. Run them in either order depending on audience; the persona switcher is shared.
+## What this demo shows
 
-The walkthrough follows the order an OT opportunity flows through the system: a TM checks their standing, a Supervisor posts and runs the rotation, errors and edge cases get handled, and the periodic operations (cutover, zero-out, structural changes) happen on a longer cadence. Pause for questions at any of the marked moments.
+- **Multi-role persona switching** — one reviewer sees TM / SV / Union Rep / Plant Mgmt / Admin in one session, no separate logins. (Spec §21.1)
+- **Full area equalization list visible to every TM** — no information asymmetry between Supervisor and Team Members. (Article XI; spec §11.1)
+- **First-login notification preferences** — TM controls off-site contact channels; in-app required, others opt-in. (Spec §11.1 TM-1)
+- **Final-mode (hours-based) equalization** — operating expectation; rotation picks lowest hours offered. (PS-036: "offered to the employee with the lowest overtime hours"; position §22.2 — JC ratification pending)
+- **Interim-mode (opportunity-based) equalization** — contract-anticipated alternative; the parties have agreed to skip it in production but the pathway exists because the contract anticipates it. (PS-036; position §22.2)
+- **Mode cutover as a defined, auditable event** — dual approval required; first cycle after cutover offers in seniority order before lowest-hours-first kicks in. (PS-036: "new opportunities will be offered first in seniority order, and thereafter by low hours")
+- **TM-direct AND verbal/SV-on-behalf response paths** — both are first-class flows; `recorded_via` distinguishes them in audit. (Spec §11.1 TM-3; §11.2 SV-3 / SV-4)
+- **Criticality split for escalation** — critical OT: ask-high → force-low. Non-essential OT: cascade to adjacent units → abandon. Critical OT can force; non-essential cannot. (PS-036: "ask high / force low"; position §22.1 — JC ratification pending)
+- **Bypass remedy with no time-based expiration** — remedy holds until satisfied; the contract protects position, not pay. (CBA §5.14 / §10.17: "remedied by offering the next available assignment instead of pay"; round-2 clarification removes the 90-day window)
+- **Dual approval for high-impact actions** — zero-out, mode cutover, structural changes. Plant Mgmt and Union both required; Admin initiates but cannot approve. Role-aware amber banner. (Spec §11.5)
+- **Always reverse charges on posting cancellation** — both interim and final modes; cancellation does not penalize anyone. (Position §22.3 — JC ratification pending)
+- **Hash-chained audit log with Union read-equity** — Union pulls audit data without filing an information request to the Company. (Spec §11.4 UR-2 / UR-3)
+- **Grievance package CSV export with SHA-256 body hash** — export provenance is verifiable later. (Spec §11.4)
+- **Compliance summary — 12 auto-generated CBA-fidelity checks** — each check cites its CBA reference; Joint Committee meeting packet leads with this. (Spec §16)
+- **Fairness distribution (10% deviation flag)** — surfaces equity drift; threshold is JC-adjustable. (Spec §16)
+- **Qualification gap reports — aggregate only, no individual upskilling recommendations** — surfaces capacity for Joint Training Committee; doesn't name individuals. (Spec §16; Article XI)
+- **Flex day tracking against the 24-day cap, mandatory only** — track-and-surface by default; voluntary OT excluded; JC can flip to enforce. (PS-004A; position §22.5 — JC ratification pending)
+
+State should be freshly seeded; click **Reset demo** in the footer if not. The sections below take the reviewer through each feature in roughly the order an OT opportunity flows through the system. Pause for questions at any of the marked moments.
 
 ---
 
