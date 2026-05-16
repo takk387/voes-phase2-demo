@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS posting (
   posted_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   is_late_add         INTEGER NOT NULL DEFAULT 0,
   status              TEXT NOT NULL DEFAULT 'open'
-                      CHECK(status IN ('open','satisfied','cancelled','abandoned')),
+                      CHECK(status IN ('open','satisfied','cancelled','abandoned','rejected_by_sv')),
   cancelled_at        TEXT,
   cancelled_reason    TEXT
 );
@@ -225,7 +225,12 @@ CREATE TABLE IF NOT EXISTS charge (
   mode_at_charge  TEXT NOT NULL CHECK(mode_at_charge IN ('interim','final')),
   recorded_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   reverses_charge_id INTEGER REFERENCES charge(id),
-  cycle_number    INTEGER
+  cycle_number    INTEGER,
+  -- Step 7: 1 marks SKT-04A no-show penalty rows. Compliance check 11
+  -- (charge multiplier matches posting rate) excludes these — penalty
+  -- charges are intentionally flat at 1.0×, regardless of the underlying
+  -- posting's pay_multiplier.
+  is_penalty      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_charge_employee_area ON charge(employee_id, area_id);

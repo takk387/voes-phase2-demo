@@ -28,12 +28,15 @@ export const load: PageServerLoad = ({ locals, params }) => {
       notes: string | null;
       area_name: string;
       area_id: string;
+      area_type: string;
+      notification_policy: string;
     }>(
       `SELECT o.id AS offer_id, o.posting_id, o.employee_id, o.offered_at,
               o.offered_by_user, o.status AS offer_status,
               p.work_date, p.start_time, p.duration_hours, p.ot_type,
               p.criticality, p.notes,
-              a.id AS area_id, a.name AS area_name
+              a.id AS area_id, a.name AS area_name,
+              a.type AS area_type, a.notification_policy
          FROM offer o
          JOIN posting p ON p.id = o.posting_id
          JOIN area a ON a.id = p.area_id

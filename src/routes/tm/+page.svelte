@@ -179,6 +179,15 @@
               <div class="text-xs text-ink-600 mt-1">{o.notes}</div>
             {/if}
           </div>
+
+          {#if o.area_type === 'skilled_trades' && o.notification_policy === 'in_app_only_no_home_except_emergency'}
+            <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded p-2">
+              <span class="font-semibold">Per SKT-04A,</span> the Company will not
+              contact you at home for this opportunity. Respond here in-app or
+              you'll be marked no-contact.
+            </div>
+          {/if}
+
           <a href="/tm/offer/{o.offer_id}" class="btn-primary w-full sm:w-auto">
             Review and respond
           </a>

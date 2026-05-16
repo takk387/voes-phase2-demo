@@ -38,6 +38,14 @@
         </div>
       {/if}
 
+      {#if data.offer.area_type === 'skilled_trades' && data.offer.notification_policy === 'in_app_only_no_home_except_emergency'}
+        <div class="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded p-3">
+          <div class="font-semibold mb-1">SKT-04A notification policy</div>
+          The Company will not contact you at home for this opportunity.
+          Respond here in-app or you'll be marked no-contact.
+        </div>
+      {/if}
+
       {#if data.requiredQuals.length > 0}
         <div class="text-sm">
           <span class="text-xs uppercase tracking-wide text-ink-500">Qualifications required</span>

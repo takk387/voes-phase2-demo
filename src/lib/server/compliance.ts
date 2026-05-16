@@ -327,6 +327,204 @@ export function runComplianceChecks(): ComplianceCheck[] {
     });
   }
 
+  // 9. Apprentice gating respected (SKT-04A page 215). For each non-escalation
+  // apprentice offer in an ST area, every active journeyperson in the same
+  // area + same expertise must have been offered in the area's current cycle.
+  // Apprentice offers tagged 'apprentice_escalation' (the journey pool was
+  // exhausted) or 'inter_shop_canvass' (cross-shop fill) are exempt by design.
+  //
+  // Scoped to each area's CURRENT cycle from rotation_state. Cycle-history
+  // gating reconstruction is a Phase 3 polish item; for the demo the current
+  // cycle is the working unit and matches the rotation engine's gating
+  // semantics at offer time.
+  {
+    const violations: Array<{
+      area_id: string; apprentice_offer_id: string;
+      apprentice_id: string; ungated_journey_id: string;
+    }> = [];
+    const apprenticeOffers = conn
+      .prepare(
+        `SELECT o.id AS offer_id, o.employee_id AS apprentice_id, p.area_id,
+                e.area_of_expertise
+           FROM offer o
+           JOIN posting p ON p.id = o.posting_id
+           JOIN area a ON a.id = p.area_id
+           JOIN employee e ON e.id = o.employee_id
+          WHERE a.type = 'skilled_trades'
+            AND e.is_apprentice = 1
+            AND o.offered_by_user != 'system-bootstrap'
+            AND (o.phase IS NULL
+                 OR o.phase NOT IN ('apprentice_escalation','inter_shop_canvass'))`
+      )
+      .all() as Array<{
+        offer_id: string; apprentice_id: string; area_id: string;
+        area_of_expertise: string | null;
+      }>;
+    for (const ao of apprenticeOffers) {
+      const cycRow = conn
+        .prepare<[string], { current_cycle: number }>(
+          `SELECT current_cycle FROM rotation_state WHERE area_id = ?`
+        )
+        .get(ao.area_id);
+      const cyc = cycRow?.current_cycle ?? 1;
+
+      // Active journeys in same area + same expertise. NULL expertise on
+      // the apprentice would indicate seed inconsistency — count any active
+      // journey in the area in that case so it still surfaces.
+      const journeys = conn
+        .prepare(
+          `SELECT e.id FROM employee e
+             JOIN area_membership m ON m.employee_id = e.id
+                                   AND m.area_id = ?
+                                   AND m.effective_end_date IS NULL
+            WHERE e.is_apprentice = 0
+              AND e.status = 'active'
+              AND (? IS NULL OR e.area_of_expertise = ?)`
+        )
+        .all(ao.area_id, ao.area_of_expertise, ao.area_of_expertise) as { id: string }[];
+      for (const j of journeys) {
+        const offered = conn
+          .prepare<[string, number, string], { c: number }>(
+            `SELECT COUNT(*) AS c FROM cycle_offered
+              WHERE area_id = ? AND cycle_number = ? AND employee_id = ?`
+          )
+          .get(ao.area_id, cyc, j.id);
+        if ((offered?.c ?? 0) === 0) {
+          violations.push({
+            area_id: ao.area_id,
+            apprentice_offer_id: ao.offer_id,
+            apprentice_id: ao.apprentice_id,
+            ungated_journey_id: j.id
+          });
+        }
+      }
+    }
+    checks.push({
+      id: 'st_apprentice_gating',
+      name: 'Apprentice gating respected (no journey skipped)',
+      cba_ref: 'SKT-04A page 215',
+      pass: violations.length === 0,
+      detail: violations.length === 0
+        ? `${apprenticeOffers.length} apprentice offers reviewed; gating respected.`
+        : `${violations.length} gating violations: e.g. apprentice offer ` +
+          `${violations[0].apprentice_offer_id} in ${violations[0].area_id} ` +
+          `while journey ${violations[0].ungated_journey_id} not yet offered.`
+    });
+  }
+
+  // 10. No force_low ever recorded for an ST area. SKT-04A escalation =
+  // ask-apprentices, then abandon. Forcing in ST is an untested
+  // contractual interpretation — Critical Rule #4 in the implementation
+  // plan. The rotation engine has no force_low code path for ST; this
+  // check is a runtime safety net.
+  {
+    const wrong = conn
+      .prepare(
+        `SELECT o.id, p.area_id FROM offer o
+           JOIN posting p ON p.id = o.posting_id
+           JOIN area a ON a.id = p.area_id
+          WHERE a.type = 'skilled_trades'
+            AND o.phase = 'force_low'`
+      )
+      .all() as { id: string; area_id: string }[];
+    checks.push({
+      id: 'st_no_force_low',
+      name: 'No force_low offers in any Skilled Trades area',
+      cba_ref: 'SKT-04A interpretation (round-2 union meeting)',
+      pass: wrong.length === 0,
+      detail: wrong.length === 0
+        ? `Skilled-Trades areas free of force_low offers.`
+        : `${wrong.length} force_low offers in ST areas: e.g. ${wrong[0].id} (${wrong[0].area_id}).`
+    });
+  }
+
+  // 11. Charge multiplier matches the posting's pay_multiplier for every
+  // non-penalty, non-reversal ST charge. Penalty rows (the SKT-04A no-show
+  // +1) are intentionally flat at 1.0× regardless of posting rate, so they
+  // are excluded via charge.is_penalty=1.
+  {
+    const wrong = conn
+      .prepare(
+        `SELECT c.id, c.charge_multiplier, p.pay_multiplier, c.area_id
+           FROM charge c
+           JOIN offer o ON o.id = c.offer_id
+           JOIN posting p ON p.id = o.posting_id
+           JOIN area a ON a.id = p.area_id
+          WHERE a.type = 'skilled_trades'
+            AND c.is_penalty = 0
+            AND c.reverses_charge_id IS NULL
+            AND c.charge_multiplier != p.pay_multiplier`
+      )
+      .all() as Array<{ id: number; charge_multiplier: number; pay_multiplier: number; area_id: string }>;
+    const total = (
+      conn
+        .prepare(
+          `SELECT COUNT(*) AS c FROM charge c
+             JOIN offer o ON o.id = c.offer_id
+             JOIN posting p ON p.id = o.posting_id
+             JOIN area a ON a.id = p.area_id
+            WHERE a.type = 'skilled_trades'
+              AND c.is_penalty = 0
+              AND c.reverses_charge_id IS NULL`
+        )
+        .get() as { c: number }
+    ).c;
+    checks.push({
+      id: 'st_charge_multiplier',
+      name: 'ST charge multiplier matches posting pay rate',
+      cba_ref: 'SKT-04A pay-rate weighting',
+      pass: wrong.length === 0,
+      detail: wrong.length === 0
+        ? `${total} ST charges verified against posting pay_multiplier (penalties excluded).`
+        : `${wrong.length} multiplier mismatches: e.g. charge ${wrong[0].id} ` +
+          `at ${wrong[0].charge_multiplier}× vs posting ${wrong[0].pay_multiplier}×.`
+    });
+  }
+
+  // 12. Every ST offer that was visible to a TM (status pending or responded)
+  // belongs to a posting whose history contains an 'sv_approved_st_posting'
+  // audit entry. This is the runtime proof of Critical Rule #5 — ST postings
+  // cannot reach a TM without ST SV approval. Bootstrap-seeded ST postings
+  // emit a synthetic approval entry so historical demo data also satisfies
+  // the check (see seed.ts seedSTHoursBootstrap).
+  {
+    const unapproved = conn
+      .prepare(
+        `SELECT o.id, o.posting_id FROM offer o
+           JOIN posting p ON p.id = o.posting_id
+           JOIN area a ON a.id = p.area_id
+          WHERE a.type = 'skilled_trades'
+            AND o.status IN ('pending','responded')
+            AND NOT EXISTS (
+              SELECT 1 FROM audit_log al
+               WHERE al.posting_id = o.posting_id
+                 AND al.action = 'sv_approved_st_posting'
+            )`
+      )
+      .all() as { id: string; posting_id: string }[];
+    const totalOffers = (
+      conn
+        .prepare(
+          `SELECT COUNT(*) AS c FROM offer o
+             JOIN posting p ON p.id = o.posting_id
+             JOIN area a ON a.id = p.area_id
+            WHERE a.type = 'skilled_trades'
+              AND o.status IN ('pending','responded')`
+        )
+        .get() as { c: number }
+    ).c;
+    checks.push({
+      id: 'st_sv_approval_gate',
+      name: 'All Skilled Trades offers passed through ST SV approval',
+      cba_ref: 'Implementation plan Critical Rule #5',
+      pass: unapproved.length === 0,
+      detail: unapproved.length === 0
+        ? `${totalOffers} ST offers verified; all parent postings SV-approved.`
+        : `${unapproved.length} ST offers reached a TM without an ` +
+          `'sv_approved_st_posting' audit entry on the parent posting (e.g. ${unapproved[0].id}).`
+    });
+  }
+
   return checks;
 }
 

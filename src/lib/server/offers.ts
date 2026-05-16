@@ -250,8 +250,8 @@ export function recordResponse(input: RecordResponseInput): RecordResponseResult
               .prepare(
                 `INSERT INTO charge
                    (offer_id, employee_id, area_id, charge_type, amount,
-                    mode_at_charge, charge_multiplier)
-                 VALUES (?, ?, ?, 'hours_offered', ?, 'final', 1.0)`
+                    mode_at_charge, charge_multiplier, is_penalty)
+                 VALUES (?, ?, ?, 'hours_offered', ?, 'final', 1.0, 1)`
               )
               .run(offer.id, offer.employee_id, posting.area_id, penalty);
             writeAudit({
@@ -973,7 +973,54 @@ function generateNextOfferST(
     }
   });
 
+  // Step 7 notification policy. The SKT-04A "no home contact except for
+  // emergencies" rule rides on the area's notification_policy column. When the
+  // offer reaches a TM (status='pending'), record the policy outcome so the
+  // audit log shows the system honored it. Proposed offers wait for SV
+  // approval to fire this — approveProposedSTPosting handles that path.
+  if (!isProposed) {
+    writeNotificationAuditIfPolicyDemands(
+      posting.area_id, posting.id, offerId, c.employee_id
+    );
+  }
+
   return { offer_id: offerId, employee_id: c.employee_id };
+}
+
+// SKT-04A: when the area's notification_policy is
+// 'in_app_only_no_home_except_emergency', record an audit entry every time
+// an ST offer becomes visible to the TM. This is the system-side proof that
+// the policy was honored — the UI surfaces the corresponding banner from the
+// same area-policy lookup. Production areas (notification_policy='in_app_default')
+// no-op, keeping their existing audit shape.
+function writeNotificationAuditIfPolicyDemands(
+  area_id: string,
+  posting_id: string,
+  offer_id: string,
+  employee_id: string
+) {
+  const conn = db();
+  const policyRow = conn
+    .prepare<[string], { notification_policy: string }>(
+      `SELECT notification_policy FROM area WHERE id = ?`
+    )
+    .get(area_id);
+  if (policyRow?.notification_policy !== 'in_app_only_no_home_except_emergency') {
+    return;
+  }
+  writeAudit({
+    actor_user: 'system',
+    actor_role: 'system',
+    action: 'notification_sent_in_app_only',
+    area_id,
+    posting_id,
+    offer_id,
+    employee_id,
+    data: {
+      policy: 'in_app_only_no_home_except_emergency',
+      contract_ref: 'SKT-04A no-home-contact rule'
+    }
+  });
 }
 
 /**
@@ -1028,6 +1075,12 @@ export function approveProposedSTPosting(
           via: 'sv_approval_promotion'
         }
       });
+      // Step 7: now that the offer is visible to the TM, record the area's
+      // notification policy outcome. Same helper as the direct-to-pending
+      // path in generateNextOfferST.
+      writeNotificationAuditIfPolicyDemands(
+        posting.area_id, posting_id, o.id, o.employee_id
+      );
     }
 
     writeAudit({
@@ -1043,5 +1096,73 @@ export function approveProposedSTPosting(
       offer_id: proposed[0]?.id ?? null,
       employee_id: proposed[0]?.employee_id ?? null
     };
+  });
+}
+
+/**
+ * Step 7: Reject a proposed ST posting. Mirror of `approveProposedSTPosting`
+ * for the reject branch of `/sv/approvals`. Marks the posting status as
+ * 'rejected_by_sv' (terminal), supersedes any proposed offer, writes an
+ * audit entry with the reject reason, and notifies the originator
+ * implicitly via the audit trail. Rejection-revision (originator edits +
+ * resubmits) is a Phase 3 polish item; the demo treats reject as terminal.
+ */
+export function rejectProposedSTPosting(
+  posting_id: string,
+  rejected_by_user: string,
+  rejected_by_role: string,
+  reason: string
+): { superseded_offers: number } {
+  return withTransaction((conn): { superseded_offers: number } => {
+    const posting = conn
+      .prepare<[string], {
+        id: string; area_id: string; pending_sv_approval: number;
+        posted_by_user: string;
+      }>(
+        `SELECT id, area_id, pending_sv_approval, posted_by_user
+           FROM posting WHERE id = ?`
+      )
+      .get(posting_id);
+    if (!posting) throw new Error('posting not found');
+    if (posting.pending_sv_approval !== 1) {
+      throw new Error('posting is not awaiting SV approval');
+    }
+
+    conn
+      .prepare(
+        `UPDATE posting
+            SET status = 'rejected_by_sv',
+                pending_sv_approval = 0,
+                cancelled_at = ?,
+                cancelled_reason = ?
+          WHERE id = ?`
+      )
+      .run(new Date().toISOString(), reason, posting_id);
+
+    // Supersede any proposed offer so it can't accidentally be promoted
+    // later. Proposed offers never had charges applied (charges flow
+    // through recordResponse, which throws on proposed), so there's
+    // nothing to reverse.
+    const superseded = conn
+      .prepare(
+        `UPDATE offer SET status = 'superseded'
+          WHERE posting_id = ? AND status = 'proposed'`
+      )
+      .run(posting_id);
+
+    writeAudit({
+      actor_user: rejected_by_user,
+      actor_role: rejected_by_role,
+      action: 'sv_rejected_st_posting',
+      area_id: posting.area_id,
+      posting_id,
+      data: {
+        superseded_offers: superseded.changes,
+        notify_originator: posting.posted_by_user
+      },
+      reason
+    });
+
+    return { superseded_offers: superseded.changes };
   });
 }

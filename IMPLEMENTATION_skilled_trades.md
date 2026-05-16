@@ -913,15 +913,35 @@ Tests:
 ```
 
 **Done When:**
-- [ ] /sv/approvals route + approve/reject actions
-- [ ] Proposed offers can't have responses recorded
-- [ ] SV approval promotes proposed → pending + notifies
-- [ ] Rejection terminal, audit + notify
-- [ ] Notification policy banner displays correctly
-- [ ] 4 new compliance checks shipped
-- [ ] All 12 checks pass on clean fresh seed
-- [ ] Fixture-driven violation tests pass
-- [ ] WALKTHROUGH.md Section 8 updated
+- [x] /sv/approvals route + approve/reject actions
+- [x] Proposed offers can't have responses recorded
+- [x] SV approval promotes proposed → pending + notifies
+- [x] Rejection terminal, audit + notify
+- [x] Notification policy banner displays correctly
+- [x] 4 new compliance checks shipped
+- [x] All 12 checks pass on clean fresh seed *(verified 2026-05-15: `npx tsx -e "runComplianceChecks()"` returns 12/12 PASS against the seeded DB)*
+- [x] Fixture-driven violation tests pass
+- [x] WALKTHROUGH.md Section 8 updated
+
+**Completion notes (2026-05-15):**
+- Schema (Step 7 additions): `posting.status` CHECK extended to include `'rejected_by_sv'` (terminal SV-side rejection state, distinct from `'cancelled'` which is originator-side and `'abandoned'` which is pool-exhaustion). `charge.is_penalty INTEGER NOT NULL DEFAULT 0` added so compliance check 11 can exempt SKT-04A no-show penalty rows (which are intentionally flat 1.0× regardless of posting rate). `posting.status` rebuild in [db.ts](phase2/src/lib/server/db.ts) follows the same docs-recommended `_new` table pattern Step 4/6 used. **Migration gate:** rebuild only fires when sqlite_master.sql contains `CHECK(status IN` — needed because some pre-Step-7 test fixtures stub `posting` as just `(id TEXT PRIMARY KEY)` and would otherwise trip a NOT NULL on `area_id` during the copy.
+- New SV-side service: [`rejectProposedSTPosting()`](phase2/src/lib/server/offers.ts) mirrors Step 6's `approveProposedSTPosting`. Marks `posting.status='rejected_by_sv'`, clears `pending_sv_approval=0`, supersedes any proposed offer, writes `sv_rejected_st_posting` audit with reason. Throws if posting isn't awaiting SV approval. Once rejected, the posting is terminal — `approveProposedSTPosting` then errors. Rejection-revision (originator edits + resubmits) stays a Phase 3 polish item per the plan's Cross-Cutting index.
+- Notification policy plumbing: new helper [`writeNotificationAuditIfPolicyDemands()`](phase2/src/lib/server/offers.ts) reads `area.notification_policy` and writes a `notification_sent_in_app_only` audit row when the area uses the SKT-04A policy (`in_app_only_no_home_except_emergency`). Called from two places: (a) `generateNextOfferST` when an offer goes direct-to-pending (no proposed flow); (b) `approveProposedSTPosting` when proposed→pending flips. Production areas (`in_app_default`) are no-ops. Verified by test: proposed offers don't fire the audit yet (TM not notified), approval fires it, default policy never fires.
+- `/sv/approvals` route shipped at [+page.server.ts](phase2/src/routes/sv/approvals/+page.server.ts) + [+page.svelte](phase2/src/routes/sv/approvals/+page.svelte). Scope-filtered: `st_supervisor` sees only their `area_scope`; `admin` sees all ST areas; production supervisors and other roles redirect out (Critical Rule #11). Per posting: full summary + proposed candidate's name/classification/hours-offered + apprentice/escalation/canvass/RDO badges + required + preferred quals + originator note. Approve action calls `approveProposedSTPosting` and redirects back to the queue. Reject opens an inline reason input (required, validated server-side) and calls `rejectProposedSTPosting`. Recent decisions card shows the last 10 approve/reject decisions excluding `actor_role='system'` (so the bootstrap synthetic approvals don't pollute the operational view).
+- `/sv` dashboard banner ([+page.svelte](phase2/src/routes/sv/+page.svelte)): the Step 6 "Approval queue UI ships in Step 7" placeholder is gone; the amber banner now reads "N posting(s) pending your approval" with the prominent **"Open approval queue →"** button as primary action and per-posting "review →" links into `/sv/approvals` instead of `/coord/posting/[id]`.
+- TM-side notification banner: amber alert showing "Per SKT-04A, the Company will not contact you at home for this opportunity. Respond here in-app or you'll be marked no-contact." Renders in two places: (a) the pending-offer card on [/tm](phase2/src/routes/tm/+page.svelte) when `area_type='skilled_trades'` AND `notification_policy='in_app_only_no_home_except_emergency'`; (b) the offer detail page at [/tm/offer/[id]](phase2/src/routes/tm/offer/[id]/+page.svelte) under the same condition. Production TMs see nothing change.
+- 4 new compliance checks shipped in [compliance.ts](phase2/src/lib/server/compliance.ts):
+  - **Check 9 — `st_apprentice_gating`** (SKT-04A page 215): For each non-escalation, non-canvass apprentice offer in an ST area (excluding `system-bootstrap` historical), every active journey in same area + same `area_of_expertise` must have a `cycle_offered` row in the area's current cycle. Bootstrap exclusion is necessary because the seed bootstrap inserts apprentice offers directly (no `markCycleOffered` for journeys at bootstrap time) — the gating already happened at the historical record point. Demo-scope simplification: the check uses the area's CURRENT cycle as proxy for the offer's cycle; per-offer cycle stamping is a Phase 3 polish item.
+  - **Check 10 — `st_no_force_low`** (Critical Rule #4 / round-2 union meeting interpretation): zero `offer.phase='force_low'` rows in any `area.type='skilled_trades'` area. Trivial query; runtime safety net for the rotation engine's no-force-low contract.
+  - **Check 11 — `st_charge_multiplier`** (SKT-04A pay-rate weighting): every non-penalty, non-reversal ST charge has `charge_multiplier == posting.pay_multiplier`. SKT-04A no-show penalty rows (`is_penalty=1`) are exempt — they're intentionally flat 1.0× regardless of posting rate.
+  - **Check 12 — `st_sv_approval_gate`** (Implementation plan Critical Rule #5): every ST offer with status pending or responded belongs to a parent posting with at least one `'sv_approved_st_posting'` audit entry. The bootstrap helper now writes a synthetic approval audit per ST bootstrap posting so historical demo data passes the check uniformly with runtime data.
+- Bootstrap audit addition: [seedSTHoursBootstrap](phase2/src/lib/server/seed.ts) now writes `sv_approved_st_posting` (synthetic, `actor_role='system'`) per bootstrap posting alongside the existing `st_history_bootstrap` entry. Audit log went from 19 to 25 entries on fresh seed (3 ST areas × 2 multiplier buckets each = 6 new synthetic approvals).
+- `/sv/approvals` recent-decisions filter: `WHERE al.actor_role != 'system'` keeps the synthetic bootstrap approvals out of the SV-facing recent list while still satisfying compliance check 12.
+- **Tests: 24 new in [step7.test.ts](phase2/src/lib/server/step7.test.ts) + 4 new schema_migration tests for the Step 7 upgrade path.** Coverage: `rejectProposedSTPosting` (happy path / audit / throws on not-awaiting / throws on missing / blocks subsequent approve / blocks subsequent recordResponse), notification audit (emits on direct-to-pending / emits on approval-flip / suppresses for default policy / suppresses for production), no-show penalty `is_penalty=1` flag, all four new compliance checks (PASS on clean state / FAIL on synthetic violation fixture each), and a production-regression sweep ensuring checks 10 and 12 don't flag legitimate production data. **Total tests: 190/190 pass** (37 schema migration + 41 cycle math + 19 Step-3 ST rotation + 17 Step-4 escalation/no-show + 32 Step-5 seed + 20 Step-6 + 24 Step-7).
+- **Compliance smoke against seeded DB (2026-05-15):** `npx tsx -e` runner reports 12/12 PASS. Notable counts: `st_apprentice_gating` (0 apprentice offers reviewed — clean state), `st_no_force_low` (no ST force_low), `st_charge_multiplier` (69 ST charges verified, penalties excluded), `st_sv_approval_gate` (23 ST offers verified; 6 synthetic bootstrap approvals + runtime approvals as appropriate).
+- `npm run check` 0 errors / 0 warnings on 436 files. `npm run build` clean (adapter-node, 11.5s). `npm run seed` produces 7 areas / 63 employees / 14 qualifications / 138 charges / 8 shift patterns / 25 audit_log entries baseline (production unchanged; ST bootstrap +6 synthetic SV approvals).
+- WALKTHROUGH.md Section 8 (Reports) updated to mention all four ST checks alongside the original eight.
+- **Plan deviation:** check 9 excludes `offered_by_user='system-bootstrap'` to keep historical bootstrap apprentice offers (which lack a `phase` tag and don't trigger `markCycleOffered` for journeys) from spuriously failing the runtime gating check. Documented inline in compliance.ts. The intent of the spec ("non-escalation apprentice offer made while a journey is ungated") is preserved for runtime decisions; bootstrap is treated as trusted historical record where the gating already happened.
 
 ---
 
@@ -1095,7 +1115,7 @@ end-to-end and confirming every UI element actually exists.
 | 4 | No-show penalty + reverse-selection + ask-apprentices escalation (NO force-low) | ✅ |
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ✅ |
 | 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ✅ |
-| 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ⬜ |
+| 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ✅ |
 | 8 | WALKTHROUGH_ST.md + production cross-reference | ⬜ |
 
 ---

@@ -113,7 +113,14 @@ export function runMigrations(conn: Database.Database) {
     // tell whether the worker was on RDO (eligible to volunteer for weekend/
     // holiday OT) vs on their normal shift. Production offers leave NULL.
     { table: 'offer', column: 'eligibility_at_offer',
-      ddl: 'eligibility_at_offer TEXT' }
+      ddl: 'eligibility_at_offer TEXT' },
+
+    // --- Step 7: charge.is_penalty ---
+    // Marks the SKT-04A no-show penalty rows so compliance check 11 (charge
+    // multiplier matches posting rate) can exclude them. Penalty charges are
+    // intentionally flat at 1.0×, regardless of posting.pay_multiplier.
+    { table: 'charge', column: 'is_penalty',
+      ddl: 'is_penalty INTEGER NOT NULL DEFAULT 0' }
   ];
   for (const m of adds) {
     const cols = conn.prepare(`PRAGMA table_info(${m.table})`).all() as { name: string }[];
@@ -130,6 +137,7 @@ export function runMigrations(conn: Database.Database) {
   // from schemaSql (which already has both values) and skip the rebuild.
   rebuildResponseTableIfNeeded(conn);
   rebuildOfferTableIfNeeded(conn);
+  rebuildPostingTableIfNeeded(conn);
 }
 
 // SQLite table-rebuild for CHECK constraint changes follows the docs'
@@ -178,6 +186,76 @@ function rebuildResponseTableIfNeeded(conn: Database.Database) {
     conn.exec(`DROP TABLE response`);
     conn.exec(`ALTER TABLE response_new RENAME TO response`);
     conn.exec(`CREATE INDEX IF NOT EXISTS idx_response_offer ON response(offer_id)`);
+  } finally {
+    conn.pragma('foreign_keys = ON');
+  }
+}
+
+function rebuildPostingTableIfNeeded(conn: Database.Database) {
+  // Step 7 adds 'rejected_by_sv' to the posting.status CHECK so the ST SV
+  // approval queue can mark a posting terminally rejected (vs cancelled,
+  // which is an originator-side action, or abandoned, which is a pool-
+  // exhaustion outcome). Fresh DBs come up from schemaSql with the new value
+  // already; this rebuild only runs on existing volumes.
+  const row = conn
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='posting'`)
+    .get() as { sql: string } | undefined;
+  if (!row) return;
+  // Skip if the table is a minimal stub (e.g. earlier-step test fixtures that
+  // model posting only as a FK target and don't carry the status CHECK at
+  // all). Real DBs always carry CHECK(status IN ...) — that's the trigger.
+  if (!row.sql.includes('CHECK(status IN')) return;
+  if (row.sql.includes("'rejected_by_sv'")) return;
+
+  conn.pragma('foreign_keys = OFF');
+  try {
+    conn.exec(`
+      CREATE TABLE posting_new (
+        id                  TEXT PRIMARY KEY,
+        area_id             TEXT NOT NULL REFERENCES area(id),
+        ot_type             TEXT NOT NULL DEFAULT 'voluntary_daily'
+                            CHECK(ot_type IN (
+                              'voluntary_daily','voluntary_weekend','voluntary_holiday',
+                              'mandatory_flex','late_add'
+                            )),
+        criticality         TEXT NOT NULL DEFAULT 'critical'
+                            CHECK(criticality IN ('critical','non_essential')),
+        work_date           TEXT NOT NULL,
+        start_time          TEXT NOT NULL,
+        duration_hours      REAL NOT NULL,
+        volunteers_needed   INTEGER NOT NULL,
+        notes               TEXT,
+        posted_by_user      TEXT NOT NULL,
+        posted_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        is_late_add         INTEGER NOT NULL DEFAULT 0,
+        status              TEXT NOT NULL DEFAULT 'open'
+                            CHECK(status IN ('open','satisfied','cancelled','abandoned','rejected_by_sv')),
+        cancelled_at        TEXT,
+        cancelled_reason    TEXT,
+        pay_multiplier      REAL NOT NULL DEFAULT 1.0
+                            CHECK(pay_multiplier IN (1.0, 1.5, 2.0)),
+        required_classification TEXT,
+        required_expertise  TEXT
+                            CHECK(required_expertise IS NULL OR required_expertise IN ('Electrical','Mechanical')),
+        pending_sv_approval INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    const oldCols = conn
+      .prepare(`PRAGMA table_info(posting)`)
+      .all() as { name: string }[];
+    const colNames = oldCols.map((c) => c.name);
+    const sharedCols = [
+      'id', 'area_id', 'ot_type', 'criticality', 'work_date', 'start_time',
+      'duration_hours', 'volunteers_needed', 'notes', 'posted_by_user',
+      'posted_at', 'is_late_add', 'status', 'cancelled_at', 'cancelled_reason',
+      'pay_multiplier', 'required_classification', 'required_expertise',
+      'pending_sv_approval'
+    ].filter((c) => colNames.includes(c));
+    const colList = sharedCols.join(', ');
+    conn.exec(`INSERT INTO posting_new (${colList}) SELECT ${colList} FROM posting`);
+    conn.exec(`DROP TABLE posting`);
+    conn.exec(`ALTER TABLE posting_new RENAME TO posting`);
+    conn.exec(`CREATE INDEX IF NOT EXISTS idx_posting_area_status ON posting(area_id, status)`);
   } finally {
     conn.pragma('foreign_keys = ON');
   }

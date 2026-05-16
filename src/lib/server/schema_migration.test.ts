@@ -705,3 +705,156 @@ describe('Step 6 upgrade path — Step-4-era DB picks up proposed without churn'
     expect(row).toEqual({ c: 1 });
   });
 });
+
+// ============================================================================
+// Step 7: posting.status CHECK adds 'rejected_by_sv'; charge gains is_penalty
+// ============================================================================
+
+describe('Step 7 — posting.status rebuild + charge.is_penalty', () => {
+  it('fresh DB allows status=rejected_by_sv', () => {
+    const conn = freshDb();
+    conn
+      .prepare(
+        `INSERT INTO area (id, name, shop, line, shift)
+         VALUES ('a-rej', 'a', 's', 'l', '1st')`
+      )
+      .run();
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO posting
+             (id, area_id, ot_type, work_date, start_time, duration_hours,
+              volunteers_needed, posted_by_user, status)
+           VALUES ('pst-rej', 'a-rej', 'voluntary_daily', '2026-05-11',
+                   '07:00', 4, 1, 'sv', 'rejected_by_sv')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+
+  it('fresh DB has charge.is_penalty column with default 0', () => {
+    const conn = freshDb();
+    const col = colByName(conn, 'charge', 'is_penalty');
+    expect(col).toBeDefined();
+    expect(col!.notnull).toBe(1);
+    expect(col!.dflt_value).toMatch(/0/);
+  });
+
+  it('Step 6-era posting table picks up rejected_by_sv on migration', () => {
+    const conn = new Database(':memory:');
+    conn.pragma('foreign_keys = ON');
+    // Pre-Step-7 posting CHECK: ('open','satisfied','cancelled','abandoned')
+    conn.exec(`
+      CREATE TABLE area (id TEXT PRIMARY KEY, name TEXT, shop TEXT, line TEXT, shift TEXT);
+      CREATE TABLE posting (
+        id TEXT PRIMARY KEY,
+        area_id TEXT NOT NULL REFERENCES area(id),
+        ot_type TEXT NOT NULL DEFAULT 'voluntary_daily'
+                CHECK(ot_type IN ('voluntary_daily','voluntary_weekend','voluntary_holiday',
+                                  'mandatory_flex','late_add')),
+        criticality TEXT NOT NULL DEFAULT 'critical'
+                    CHECK(criticality IN ('critical','non_essential')),
+        work_date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        duration_hours REAL NOT NULL,
+        volunteers_needed INTEGER NOT NULL,
+        notes TEXT,
+        posted_by_user TEXT NOT NULL,
+        posted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        is_late_add INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'open'
+               CHECK(status IN ('open','satisfied','cancelled','abandoned')),
+        cancelled_at TEXT,
+        cancelled_reason TEXT,
+        pay_multiplier REAL NOT NULL DEFAULT 1.0,
+        required_classification TEXT,
+        required_expertise TEXT,
+        pending_sv_approval INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE employee (id TEXT PRIMARY KEY);
+      CREATE TABLE offer (
+        id TEXT PRIMARY KEY,
+        posting_id TEXT NOT NULL REFERENCES posting(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        rotation_position INTEGER,
+        offered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        offered_by_user TEXT NOT NULL,
+        phase TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        eligibility_at_offer TEXT
+      );
+      CREATE TABLE response (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        response_type TEXT NOT NULL,
+        recorded_at TEXT,
+        recorded_by_user TEXT NOT NULL,
+        recorded_via TEXT NOT NULL,
+        reason TEXT,
+        supersedes_response_id INTEGER REFERENCES response(id)
+      );
+      CREATE TABLE charge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL REFERENCES offer(id),
+        employee_id TEXT NOT NULL REFERENCES employee(id),
+        area_id TEXT NOT NULL REFERENCES area(id),
+        charge_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        mode_at_charge TEXT NOT NULL,
+        recorded_at TEXT,
+        reverses_charge_id INTEGER REFERENCES charge(id),
+        cycle_number INTEGER
+      );
+      CREATE TABLE shift_pattern (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        cycle_length_days INTEGER NOT NULL,
+        crew_count INTEGER NOT NULL,
+        calendar_json TEXT NOT NULL,
+        description TEXT
+      );
+    `);
+    conn
+      .prepare(
+        `INSERT INTO area (id, name, shop, line, shift)
+         VALUES ('a-pre7', 'a', 's', 'l', '1st')`
+      )
+      .run();
+    conn
+      .prepare(
+        `INSERT INTO posting
+           (id, area_id, ot_type, work_date, start_time, duration_hours,
+            volunteers_needed, posted_by_user)
+         VALUES ('pst-pre7', 'a-pre7', 'voluntary_daily', '2026-05-11',
+                 '07:00', 4, 1, 'sv')`
+      )
+      .run();
+
+    runMigrations(conn);
+
+    // Pre-existing row preserved
+    const row = conn
+      .prepare(`SELECT id, status FROM posting WHERE id = 'pst-pre7'`)
+      .get() as { id: string; status: string };
+    expect(row.status).toBe('open');
+
+    // New value now allowed
+    expect(() =>
+      conn
+        .prepare(
+          `INSERT INTO posting
+             (id, area_id, ot_type, work_date, start_time, duration_hours,
+              volunteers_needed, posted_by_user, status)
+           VALUES ('pst-rej-pre7', 'a-pre7', 'voluntary_daily', '2026-05-11',
+                   '07:00', 4, 1, 'sv', 'rejected_by_sv')`
+        )
+        .run()
+    ).not.toThrow();
+  });
+
+  it('Step 7 migration is idempotent', () => {
+    const conn = freshDb();
+    expect(() => runMigrations(conn)).not.toThrow();
+    expect(() => runMigrations(conn)).not.toThrow();
+  });
+});

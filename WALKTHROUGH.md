@@ -187,7 +187,7 @@ Click into **Reports** from the footer.
 
 **Walk through each card briefly:**
 
-- **Compliance summary** — auto-generated CBA-fidelity checks: hash chain, cycle integrity, escalation branch fidelity, remedy eligibility, dual approvals, leave preservation. Each check cites its CBA reference. This is what a Joint Committee meeting packet leads with.
+- **Compliance summary** — auto-generated CBA-fidelity checks: hash chain, cycle integrity, escalation branch fidelity, remedy eligibility, dual approvals, leave preservation, plus **four Skilled Trades checks** (apprentice gating respected, no force-low offers in any ST area, charge multiplier matches posting pay rate with penalties exempt, every ST offer passed through ST SV approval). Each check cites its CBA reference. This is what a Joint Committee meeting packet leads with.
 - **Fairness distribution** — per-area mean / max / max deviation. Areas where any TM deviates more than 10% from the area mean are flagged amber.
 - **Qualification gap** — per area, qualified TMs vs. qual-required posting volume. Surfaces capacity constraints for the Joint Training Committee. Does **not** name individuals.
 - **Flex day usage** — per shift, mandatory Flex-day count vs. the 24-day annual cap. Per §22.5, voluntary OT is excluded. Track-and-surface only by default; Joint Committee can switch to enforce.

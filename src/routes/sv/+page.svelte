@@ -29,14 +29,15 @@
     {/if}
   </div>
 
-  <!-- ST: postings awaiting your approval. The real queue UI ships in Step 7. -->
+  <!-- ST SV approval banner: pending postings awaiting this SV's approval. -->
   {#if data.isSTSupervisor && data.stPendingApprovals.length > 0}
     <div class="card border-amber-300 ring-1 ring-amber-200">
       <div class="card-header bg-amber-50/80 flex items-center justify-between">
         <span class="font-medium text-sm">
-          ST postings awaiting your approval ({data.stPendingApprovals.length})
+          {data.stPendingApprovals.length}
+          posting{data.stPendingApprovals.length === 1 ? '' : 's'} pending your approval
         </span>
-        <a href="/sv/approvals" class="text-xs text-accent-700 hover:underline">Open approval queue →</a>
+        <a href="/sv/approvals" class="btn-primary text-xs px-3 py-1.5">Open approval queue →</a>
       </div>
       <div class="card-body">
         <ul class="text-sm divide-y divide-ink-100">
@@ -54,14 +55,10 @@
                   <span class="text-xs text-ink-700 ml-1">&middot; any {p.required_expertise}</span>
                 {/if}
               </div>
-              <a href="/coord/posting/{p.id}" class="text-xs text-accent-700 hover:underline">review →</a>
+              <a href="/sv/approvals" class="text-xs text-accent-700 hover:underline">review →</a>
             </li>
           {/each}
         </ul>
-        <p class="text-xs text-ink-500 mt-2 italic">
-          Approval queue UI ships in Step 7. For now, click through to review
-          each posting's proposed candidate.
-        </p>
       </div>
     </div>
   {/if}
