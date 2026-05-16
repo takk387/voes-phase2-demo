@@ -1,6 +1,6 @@
 # VOES Phase 2 — Skilled Trades Demo Walkthrough
 
-This demo walks through the Skilled Trades flow (SKT-04A) — a second `area_type` on the same VOES platform, dispatching to a different rule set from production OT. Every feature exists because the contract demands it or the parties have agreed to it. For the production-OT walkthrough, see [WALKTHROUGH.md](WALKTHROUGH.md).
+This demo walks through the Skilled Trades flow (SKT-04A) — a second `area_type` on the same VOES platform, dispatching to a different rule set from production OT. Every feature exists because the contract demands it or the parties have agreed to it.
 
 ## What this demo shows
 

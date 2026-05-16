@@ -1,6 +1,6 @@
 # VOES Phase 2 — Production OT Demo Walkthrough
 
-This demo walks through the production-OT (PS-036) flow. Every feature exists because the contract demands it or the parties have agreed to it. The Skilled Trades flow runs on the same platform with the SKT-04A rule set — see [WALKTHROUGH_ST.md](WALKTHROUGH_ST.md).
+This demo walks through the production-OT (PS-036) flow. Every feature exists because the contract demands it or the parties have agreed to it.
 
 ## What this demo shows
 
