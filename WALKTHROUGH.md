@@ -1,8 +1,10 @@
-# VOES Phase 2 — Stakeholder Demo Walkthrough
+# VOES Phase 2 — Production OT Demo Walkthrough
 
 **Audience:** Joint Committee, plant management, local Union, ideas-program reviewers.
 **Length:** 20 minutes if you click through everything; 10 if you skip the open-ended exploration at the end.
 **Setup:** Browser open to the demo URL. Default persona is Newman (Team Member, Paint 2nd — final mode). State should be freshly seeded; if not, run `npm run seed` to reset.
+
+> **Two walkthroughs.** This one covers production OT (PS-036) areas — Body, Paint, Battery, Finish. Skilled Trades is on the same platform with a separate rule set drawn from SKT-04A; see [WALKTHROUGH_ST.md](WALKTHROUGH_ST.md) for that demo. Run them in either order depending on audience; the persona switcher is shared.
 
 The walkthrough follows the order an OT opportunity flows through the system: a TM checks their standing, a Supervisor posts and runs the rotation, errors and edge cases get handled, and the periodic operations (cutover, zero-out, structural changes) happen on a longer cadence. Pause for questions at any of the marked moments.
 
@@ -211,7 +213,13 @@ The system surfaces **6 policy-decision items** in plan §22. Four have agreed u
 
 **Genuinely open:**
 - §22.4: Sub-department escalation event format and approval flow
-- §22.6: Specialty position carve-out scope (and whether Skilled Trades needs a separate native system)
+- §22.6: Specialty position carve-out scope — **partially resolved.** Skilled Trades is now built into the system as a parallel `area_type` (SKT-04A rules) — see [WALKTHROUGH_ST.md](WALKTHROUGH_ST.md). The remaining §22.6 question is narrower: Team Leaders and Equipment Operators stay in the production equalization pool of their assigned area (they're not sidestepped from rotation); the carve-out applies only to their routine before/after-shift specialty tasks (PS-036's "early-ins/late-outs" exception). How those routine tasks get logged is still being researched.
+
+**Separate-but-parallel features (own implementation plan, when scoped):**
+- **Outside contractor clearance + outside contracting checklist** — workflow tracking when work is contracted out. Not part of either PS-036 or SKT-04A equalization flows.
+- **Staffing availability** — who is available for project work over which periods, surfaced at team and member level. Also distinct from equalization.
+
+Neither is folded into the current demo; both should get their own implementation plan when scoped.
 
 ---
 

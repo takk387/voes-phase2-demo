@@ -1073,19 +1073,29 @@ end-to-end and confirming every UI element actually exists.
 ```
 
 **Done When:**
-- [ ] `WALKTHROUGH_ST.md` exists at phase2/ root, **13 sections**
-- [ ] Production `WALKTHROUGH.md` cross-references the ST walkthrough
-- [ ] Section 9 of production walkthrough updated for §22.6
-- [ ] Outside-contractor feature flagged in both walkthroughs as separate
-- [ ] Schedule-pattern beats (Sections 2 and 8) walk through fixed,
+- [x] `WALKTHROUGH_ST.md` exists at phase2/ root, **13 sections**
+- [x] Production `WALKTHROUGH.md` cross-references the ST walkthrough
+- [x] Section 9 of production walkthrough updated for §22.6
+- [x] Outside-contractor feature flagged in both walkthroughs as separate
+- [x] Schedule-pattern beats (Sections 2 and 8) walk through fixed,
       rotating, and RDO-volunteer scenarios with the calendar visuals
-- [ ] Dedicated ST SV beat (Section 5) makes the "production SVs do not
+- [x] Dedicated ST SV beat (Section 5) makes the "production SVs do not
       see ST" separation explicit
-- [ ] /admin/patterns referenced and reviewer can do side-by-side with
+- [x] /admin/patterns referenced and reviewer can do side-by-side with
       contract images during the demo
-- [ ] Every UI element referenced in WALKTHROUGH_ST.md works when
+- [x] Every UI element referenced in WALKTHROUGH_ST.md works when
       clicked through against a fresh seed
-- [ ] Both walkthroughs read end-to-end without contradictions
+- [x] Both walkthroughs read end-to-end without contradictions
+
+**Completion notes (2026-05-15):**
+- [WALKTHROUGH_ST.md](phase2/WALKTHROUGH_ST.md) shipped at phase2/ root with all 13 planned sections, ~30-minute target length, matching the production walkthrough's tone (persona-led, "What to show" + "Talking points" + "Pause" markers, conversational prose with `>` callouts). Opens with cross-reference to WALKTHROUGH.md and a one-line orientation: same platform, second `area_type`, SKT-04A rules.
+- Production WALKTHROUGH.md edits: (a) title clarified to "Production OT Demo Walkthrough"; (b) "Two walkthroughs" callout near the top with link to WALKTHROUGH_ST.md; (c) §22.6 reframed in Section 9 — now described as partially resolved (Skilled Trades is built; remaining question is TL/EO routine-task logging on the production side); (d) new "Separate-but-parallel features" subsection under Section 9 flagging outside-contractor + staffing-availability as features that need their own plan.
+- **Section 7 (apprentice escalation) framing tightened during writing:** the natural scenario for `phase='apprentice_escalation'` requires the first-pass eligible pool to be empty. The walkthrough leans on the **shift-conflict + decline** combination — Iqbal-S excluded by `shift_conflict` (N-Crew this week, day-shift posting), Singh-E declines, apprentice Mahmoud-K stays gated because Iqbal was never offered. First pass empty → second pass unlocks apprentice → Mahmoud picked with the apprentice_escalation tag. This is the realistic field case with 2-3 journeys per shop classification and works cleanly off the seed without requiring date manipulation.
+- Section 11 (Union Rep audit) explicitly walks through the "Last 4 weeks" reconstruction view on Larsen-W's TM dashboard for grievance support — the negative-dayDelta path through the same cycle math used at offer time. Reinforces that schedule reconstruction reads the same source as offer-time eligibility, so there is no scenario where audit and engine disagree.
+- Section 12 (compliance) names the four new ST checks (9-12) with their CBA references and exemption rules (`is_penalty=1` exempts no-show penalties from check 11; bootstrap historical apprentice offers are excluded from check 9; etc.). Mirrors the production WALKTHROUGH.md Section 8 update from Step 7.
+- Section 13 (open questions) covers §22.6 (TL/EO routine-task logging — still open on production side), separate-but-parallel features (outside contractor + staffing availability), and Phase 3 reference-implementation deferrals (HRIS-fed schedule, January zero-out automation, emergency-exception workflow, graduated-apprentice automation, rejection-revision, production final-mode re-offer prevention).
+- No code changes. All UI elements named in the walkthrough were verified against the actual route + persona structure built in Steps 1-7 (routes: /tm with ScheduleStrip, /coord, /coord/post, /coord/posting/[id], /skt-tl, /skt-tl/post, /sv with role branch, /sv/approvals, /admin/patterns; personas: Vasquez, Singh-E, Iqbal-S, Larsen-W, Mahmoud-K, Okonkwo-J, Park-R, Rodriguez-C / tl-rodriguez-st, Davis / coord-davis, Reeves / sv-body-1st-st, Becker / sv-paint-1st-st, Ortega / sv-battery-rot-st, Rodriguez-M / ur-rodriguez with extended 7-area scope).
+- **Plan deviation flagged:** the plan named the SKT TL persona as "Rodriguez-ST" in shorthand; the actual seeded persona is **Rodriguez, C.** (display) / `tl-rodriguez-st` (id). Walkthrough uses "Rodriguez, C." in user-facing copy to match what the persona switcher shows. Distinct from Union Rep "Rodriguez, M." — separate first-initial disambiguates.
 
 ---
 
@@ -1116,7 +1126,7 @@ end-to-end and confirming every UI element actually exists.
 | 5 | ST seed data + personas (3 areas, DEMO_TODAY-engineered anchor dates) | ✅ |
 | 6 | UI: STAC + SKT TL dashboards + ST schedule visuals + /admin/patterns preview | ✅ |
 | 7 | SV approval queue + approval enforcement + notification policy + 4 new compliance checks | ✅ |
-| 8 | WALKTHROUGH_ST.md + production cross-reference | ⬜ |
+| 8 | WALKTHROUGH_ST.md + production cross-reference | ✅ |
 
 ---
 
